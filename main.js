@@ -8,63 +8,121 @@ function parseStage(text) {
   return text.match(/Stage:\s*([^\n]+)/)?.[1]?.trim() || "No stage found";
 }
 
-(async () => {
-  const browser = await chromium.launch({ headless: false });
+function renderProgress(current, total, label = "Progress") {
+  const width = 30;
+  const ratio = total === 0 ? 1 : current / total;
+  const filled = Math.round(width * ratio);
+  const empty = width - filled;
+  const percent = Math.round(ratio * 100);
+  const bar = `${"#".repeat(filled)}${"-".repeat(empty)}`;
 
-  const context = await browser.newContext({
-    storageState: "auth.json"
-  });
+  process.stdout.write(`\r${label} [${bar}] ${current}/${total} (${percent}%)`);
 
-  const page = await context.newPage();
+  if (current === total) {
+    process.stdout.write("\n");
+  }
+}
 
-  const results = [];
+async function clickLoadMoreUntilDone(page) {
+  while (true) {
+    const loadMore = page.locator("button:has-text('Load More')").first();
+    const visible = await loadMore.isVisible({ timeout: 3000 }).catch(() => false);
 
-  for (const id of ids) {
-    const url = `https://ai.joinhandshake.com/annotations/fellow/task/${id}/run`;
-
-    try {
-      console.log(`Opening ${id}...`);
-
-      await page.goto(url, {
-        waitUntil: "domcontentloaded",
-        timeout: 30000
-      });
-
-      // wait for page to settle
-      await page.waitForTimeout(1500);
-
-      const span = page.locator("span").filter({ hasText: id }).first();
-
-      const exists = await span.isVisible({ timeout: 5000 }).catch(() => false);
-
-      if (exists) {
-        await span.hover();
-        await page.waitForTimeout(500);
-      } else {
-        console.log(`⚠️ Span not found for ${id}, continuing...`);
-      }
-
-      const bodyText = await page.locator("body").innerText();
-      const stage = parseStage(bodyText);
-
-      results.push({ id, stage });
-      console.log(`${id} => ${stage}`);
-
-    } catch (err) {
-      console.log(`❌ ERROR for ${id}: ${err.message}`);
-
-      results.push({
-        id,
-        stage: "ERROR / inaccessible / failed to load"
-      });
+    if (!visible) {
+      break;
     }
+
+    await loadMore.click();
+    await page.waitForTimeout(2500);
+  }
+}
+
+async function extractIds(page) {
+  return await page.evaluate(() => {
+    return [...new Set(
+      Array.from(document.querySelectorAll("span.block.truncate"))
+        .map((el) => el.textContent.trim())
+        .filter((text) => /^[0-9a-f-]{36}$/i.test(text))
+    )];
+  });
+}
+
+(async () => {
+  if (!PROJECT_TASKS_URL) {
+    throw new Error("Add your Handshake project tasks URL to PROJECT_TASKS_URL near line 4.");
   }
 
-  console.table(results);
+  const browser = await chromium.launch({ headless: true });
 
-  // ✅ save results
-  fs.writeFileSync("stages.json", JSON.stringify(results, null, 2));
-  console.log("✅ Saved results to stages.json");
+  try {
+    const context = await browser.newContext({
+      storageState: "auth.json"
+    });
 
-  await browser.close();
+    const page = await context.newPage();
+
+    console.log("Opening project tasks page...");
+    await page.goto(PROJECT_TASKS_URL, {
+      waitUntil: "domcontentloaded",
+      timeout: 30000
+    });
+
+    await page.waitForTimeout(3000);
+    await clickLoadMoreUntilDone(page);
+
+    console.log("Extracting task IDs...");
+    const ids = await extractIds(page);
+
+    console.log(`Found ${ids.length} IDs`);
+    fs.writeFileSync("ids.json", JSON.stringify(ids, null, 2));
+    console.log("Saved IDs to ids.json\n");
+
+    const results = [];
+    let completed = 0;
+    renderProgress(completed, ids.length, "Checking stages");
+
+    for (const id of ids) {
+      const url = `https://ai.joinhandshake.com/annotations/fellow/task/${id}/run`;
+
+      try {
+        await page.goto(url, {
+          waitUntil: "domcontentloaded",
+          timeout: 30000
+        });
+
+        await page.waitForTimeout(2500);
+
+        const span = page.locator("span").filter({ hasText: id }).first();
+        const exists = await span.isVisible({ timeout: 5000 }).catch(() => false);
+
+        if (exists) {
+          await span.hover();
+          await page.waitForTimeout(500);
+        }
+
+        const bodyText = await page.locator("body").innerText();
+        const stage = parseStage(bodyText);
+
+        results.push({ id, stage });
+      } catch (err) {
+        process.stdout.write("\n");
+        console.log(`ERROR for ${id}: ${err.message}`);
+
+        results.push({
+          id,
+          stage: "ERROR / inaccessible / failed"
+        });
+      } finally {
+        completed += 1;
+        renderProgress(completed, ids.length, "Checking stages");
+      }
+    }
+
+    console.table(results);
+
+    fs.writeFileSync("stages.json", JSON.stringify(results, null, 2));
+    console.log("Saved results to stages.json");
+  } finally {
+    await browser.close();
+  }
 })();
