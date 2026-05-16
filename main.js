@@ -1,128 +1,340 @@
-const { chromium } = require("playwright");
 const fs = require("fs");
+const readline = require("readline/promises");
 
-const PROJECT_TASKS_URL =
-  "";
+const CONFIG_PATH = "config.json";
+const AUTH_STATE_PATH = "auth.json";
+const PAGE_SIZE = 1000;
 
-function parseStage(text) {
-  return text.match(/Stage:\s*([^\n]+)/)?.[1]?.trim() || "No stage found";
-}
-
-function renderProgress(current, total, label = "Progress") {
-  const width = 30;
-  const ratio = total === 0 ? 1 : current / total;
-  const filled = Math.round(width * ratio);
-  const empty = width - filled;
-  const percent = Math.round(ratio * 100);
-  const bar = `${"#".repeat(filled)}${"-".repeat(empty)}`;
-
-  process.stdout.write(`\r${label} [${bar}] ${current}/${total} (${percent}%)`);
-
-  if (current === total) {
-    process.stdout.write("\n");
+function loadProjectTasksUrl() {
+  if (!fs.existsSync(CONFIG_PATH)) {
+    throw new Error(
+      `Create ${CONFIG_PATH} with your Handshake tasks URL, for example: ` +
+        `{"projectTasksUrl":"https://ai.joinhandshake.com/fellow/YOUR_PROJECT_ID/tasks"}`
+    );
   }
+
+  const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+  const projectTasksUrl = config.projectTasksUrl?.trim();
+
+  if (!projectTasksUrl) {
+    throw new Error(`Add projectTasksUrl to ${CONFIG_PATH}.`);
+  }
+
+  return projectTasksUrl;
 }
 
-async function clickLoadMoreUntilDone(page) {
-  while (true) {
-    const loadMore = page.locator("button:has-text('Load More')").first();
-    const visible = await loadMore.isVisible({ timeout: 3000 }).catch(() => false);
+function getProjectId(projectTasksUrl) {
+  const match = projectTasksUrl.match(/\/fellow\/([^/]+)\/tasks/i);
 
-    if (!visible) {
+  if (!match) {
+    throw new Error(
+      "PROJECT_TASKS_URL must look like https://ai.joinhandshake.com/fellow/PROJECT_ID/tasks."
+    );
+  }
+
+  return match[1];
+}
+
+function buildMyTasksUrl(projectTasksUrl, projectId, limit, offset) {
+  const baseUrl = new URL(
+    "/api/trpc/task.listClaimedTasksForFellow",
+    projectTasksUrl
+  );
+  const input = {
+    "0": {
+      json: {
+        annotationProjectId: projectId,
+        pipelineStageId: null,
+        statuses: null,
+        attempters: null,
+        search: null,
+        limit,
+        offset,
+        sortBy: "taskId",
+        sortOrder: "desc",
+        removeSkipped: true,
+        statusFilter: "all",
+        categories: null,
+        priorityLevel: null,
+      },
+      meta: {
+        values: {
+          pipelineStageId: ["undefined"],
+          statuses: ["undefined"],
+          attempters: ["undefined"],
+          search: ["undefined"],
+          categories: ["undefined"],
+          priorityLevel: ["undefined"],
+        },
+        v: 1,
+      },
+    },
+  };
+
+  baseUrl.searchParams.set("batch", "1");
+  baseUrl.searchParams.set("input", JSON.stringify(input));
+
+  return baseUrl.toString();
+}
+
+function domainMatches(hostname, cookieDomain) {
+  const domain = cookieDomain.startsWith(".")
+    ? cookieDomain.slice(1)
+    : cookieDomain;
+
+  return hostname === domain || hostname.endsWith(`.${domain}`);
+}
+
+function createCookieHeader(storageState, targetUrl) {
+  const url = new URL(targetUrl);
+
+  return (storageState.cookies || [])
+    .filter((cookie) => {
+      const path = cookie.path || "/";
+
+      return (
+        domainMatches(url.hostname, cookie.domain || "") &&
+        url.pathname.startsWith(path)
+      );
+    })
+    .map((cookie) => `${cookie.name}=${cookie.value}`)
+    .join("; ");
+}
+
+function getCookieValue(storageState, name, targetUrl) {
+  const url = new URL(targetUrl);
+  const cookie = (storageState.cookies || []).find((item) => {
+    const path = item.path || "/";
+
+    return (
+      item.name === name &&
+      domainMatches(url.hostname, item.domain || "") &&
+      url.pathname.startsWith(path)
+    );
+  });
+
+  return cookie?.value || "";
+}
+
+function extractTasks(apiPayload) {
+  const data = apiPayload?.[0]?.result?.data?.json;
+  const tasks = [
+    ...(Array.isArray(data?.activeTasks) ? data.activeTasks : []),
+    ...(Array.isArray(data?.pastTasks) ? data.pastTasks : []),
+  ];
+
+  if (!data || (!Array.isArray(data.activeTasks) && !Array.isArray(data.pastTasks))) {
+    throw new Error(
+      "API response did not include 0.result.data.json.activeTasks/pastTasks."
+    );
+  }
+
+  return tasks;
+}
+
+function extractTaskStages(apiPayload) {
+  return extractTasks(apiPayload).map((task) => ({
+    id: task.id,
+    stage:
+      task.$related?.pipelineStage?.name ||
+      task.pipelineStage?.name ||
+      "No stage found",
+  }));
+}
+
+async function fetchTasksPage(projectTasksUrl, storageState, limit, offset) {
+  const projectId = getProjectId(projectTasksUrl);
+  const apiUrl = buildMyTasksUrl(projectTasksUrl, projectId, limit, offset);
+  const cookieHeader = createCookieHeader(storageState, apiUrl);
+
+  if (!cookieHeader) {
+    throw new Error(`No matching cookies found in ${AUTH_STATE_PATH} for ${apiUrl}.`);
+  }
+
+  const csrfToken =
+    getCookieValue(storageState, "XSRF-TOKEN", apiUrl) ||
+    getCookieValue(storageState, "csrf-token", apiUrl) ||
+    getCookieValue(storageState, "_csrf_token", apiUrl);
+  const headers = {
+    Accept: "application/json, text/plain, */*",
+    Cookie: cookieHeader,
+    Referer: projectTasksUrl,
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/147.0.0.0 Safari/537.36",
+  };
+
+  if (csrfToken) {
+    headers["X-CSRF-Token"] = csrfToken;
+    headers["X-XSRF-TOKEN"] = csrfToken;
+  }
+
+  const response = await fetch(apiUrl, { headers });
+
+  if (response.status === 401 || response.status === 403) {
+    throw new Error(
+      `Handshake API auth failed with status ${response.status}. Refresh ${AUTH_STATE_PATH}.`
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(`Handshake API failed with status ${response.status}.`);
+  }
+
+  return response.json();
+}
+
+async function fetchAllTaskStages(projectTasksUrl, storageState, pageSize = PAGE_SIZE) {
+  const results = [];
+
+  for (let offset = 0; ; offset += pageSize) {
+    const payload = await fetchTasksPage(
+      projectTasksUrl,
+      storageState,
+      pageSize,
+      offset
+    );
+    const tasks = extractTasks(payload);
+
+    results.push(...extractTaskStages(payload));
+
+    if (tasks.length < pageSize) {
       break;
     }
-
-    await loadMore.click();
-    await page.waitForTimeout(2500);
   }
+
+  return results;
 }
 
-async function extractIds(page) {
-  return await page.evaluate(() => {
-    return [...new Set(
-      Array.from(document.querySelectorAll("span.block.truncate"))
-        .map((el) => el.textContent.trim())
-        .filter((text) => /^[0-9a-f-]{36}$/i.test(text))
-    )];
+function renderStageSummary(results, previousResults) {
+  console.log("\n=== Stage Summary ===");
+
+  const stages = [
+    "Attempt",
+    "Eval Stage 1",
+    "Review 1",
+    "BPO Holding",
+    "Pending Pass@",
+    "Submitted for Pass@",
+    "CL AYDEN",
+    "Pass@0",
+    "Internal Audit",
+    "Ready to Deliver",
+    "Delivered",
+  ];
+
+  stages.forEach((stage, index) => {
+    const current = results.filter((result) => result.stage === stage).length;
+    const previous = previousResults.filter((result) => result.stage === stage).length;
+    const change = current - previous;
+    const changeStr =
+      change > 0 ? `(+${change})` : change < 0 ? `(${change})` : "(0)";
+
+    console.log(`${index + 1} - ${stage}: ${current} ${changeStr}`);
   });
 }
 
-(async () => {
-  if (!PROJECT_TASKS_URL) {
-    throw new Error("Add your Handshake project tasks URL to PROJECT_TASKS_URL near line 4.");
+function readPreviousResults() {
+  try {
+    if (fs.existsSync("stages.json")) {
+      return JSON.parse(fs.readFileSync("stages.json", "utf8"));
+    }
+  } catch {
+    console.log("Could not load previous results for comparison");
   }
 
-  const browser = await chromium.launch({ headless: true });
+  return [];
+}
+
+async function waitForEnter(message) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
 
   try {
-    const context = await browser.newContext({
-      storageState: "auth.json"
-    });
+    await rl.question(message);
+  } finally {
+    rl.close();
+  }
+}
 
+function loadPlaywright() {
+  try {
+    return require("playwright");
+  } catch {
+    throw new Error(
+      `${AUTH_STATE_PATH} is missing and Playwright is not installed. ` +
+        "Run: npm install playwright && npx playwright install chromium"
+    );
+  }
+}
+
+async function createAuthState(projectTasksUrl) {
+  const { chromium } = loadPlaywright();
+  const browser = await chromium.launch({ headless: false });
+
+  try {
+    const context = await browser.newContext();
     const page = await context.newPage();
 
-    console.log("Opening project tasks page...");
-    await page.goto(PROJECT_TASKS_URL, {
+    console.log(`${AUTH_STATE_PATH} not found. Opening browser login...`);
+    await page.goto(projectTasksUrl, {
       waitUntil: "domcontentloaded",
-      timeout: 30000
+      timeout: 60000,
     });
 
-    await page.waitForTimeout(3000);
-    await clickLoadMoreUntilDone(page);
+    await waitForEnter(
+      "Log in with Handshake in the browser, then press Enter here to save auth..."
+    );
 
-    console.log("Extracting task IDs...");
-    const ids = await extractIds(page);
+    await context.storageState({ path: AUTH_STATE_PATH });
+    console.log(`Saved auth to ${AUTH_STATE_PATH}`);
 
-    console.log(`Found ${ids.length} IDs`);
-    fs.writeFileSync("ids.json", JSON.stringify(ids, null, 2));
-    console.log("Saved IDs to ids.json\n");
-
-    const results = [];
-    let completed = 0;
-    renderProgress(completed, ids.length, "Checking stages");
-
-    for (const id of ids) {
-      const url = `https://ai.joinhandshake.com/annotations/fellow/task/${id}/run`;
-
-      try {
-        await page.goto(url, {
-          waitUntil: "domcontentloaded",
-          timeout: 30000
-        });
-
-        await page.waitForTimeout(2500);
-
-        const span = page.locator("span").filter({ hasText: id }).first();
-        const exists = await span.isVisible({ timeout: 5000 }).catch(() => false);
-
-        if (exists) {
-          await span.hover();
-          await page.waitForTimeout(500);
-        }
-
-        const bodyText = await page.locator("body").innerText();
-        const stage = parseStage(bodyText);
-
-        results.push({ id, stage });
-      } catch (err) {
-        process.stdout.write("\n");
-        console.log(`ERROR for ${id}: ${err.message}`);
-
-        results.push({
-          id,
-          stage: "ERROR / inaccessible / failed"
-        });
-      } finally {
-        completed += 1;
-        renderProgress(completed, ids.length, "Checking stages");
-      }
-    }
-
-    console.table(results);
-
-    fs.writeFileSync("stages.json", JSON.stringify(results, null, 2));
-    console.log("Saved results to stages.json");
+    return JSON.parse(fs.readFileSync(AUTH_STATE_PATH, "utf8"));
   } finally {
     await browser.close();
   }
-})();
+}
+
+async function loadOrCreateAuthState(projectTasksUrl) {
+  if (fs.existsSync(AUTH_STATE_PATH)) {
+    return JSON.parse(fs.readFileSync(AUTH_STATE_PATH, "utf8"));
+  }
+
+  return createAuthState(projectTasksUrl);
+}
+
+async function main() {
+  const projectTasksUrl = loadProjectTasksUrl();
+
+  const storageState = await loadOrCreateAuthState(projectTasksUrl);
+
+  console.log("Fetching My tasks from Handshake API...");
+  const results = await fetchAllTaskStages(projectTasksUrl, storageState);
+  const ids = results.map((result) => result.id);
+
+  console.log(`Found ${ids.length} IDs`);
+  fs.writeFileSync("ids.json", JSON.stringify(ids, null, 2));
+  console.log("Saved IDs to ids.json\n");
+
+  console.table(results);
+  renderStageSummary(results, readPreviousResults());
+
+  fs.writeFileSync("stages.json", JSON.stringify(results, null, 2));
+  console.log("\nSaved results to stages.json");
+}
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err.message);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  buildMyTasksUrl,
+  createCookieHeader,
+  extractTaskStages,
+  fetchAllTaskStages,
+  getProjectId,
+};

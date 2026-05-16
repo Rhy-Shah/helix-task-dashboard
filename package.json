@@ -1,15 +1,5 @@
 {
-  "name": "hai-script",
-  "version": "1.0.0",
-  "main": "main.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
   "dependencies": {
-    "playwright": "^1.59.1"
+    "playwright": "^1.60.0"
   }
 }

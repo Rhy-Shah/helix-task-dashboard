@@ -1,37 +1,36 @@
 # HAI Script
 
-Node.js Playwright script for checking Handshake AI task stages.
+Checks your Handshake AI **My tasks** stages with the Handshake API.
+
+Run `node main.js`. If `auth.json` already exists, the script uses it. If
+`auth.json` is missing, `main.js` automatically starts the Playwright login
+fallback, opens a browser, waits for you to log in, saves `auth.json`, and then
+continues the API run.
 
 ## Setup
 
-Install dependencies:
+Use Node.js 18 or newer.
+
+Playwright is only required for the automatic login fallback that runs when
+`auth.json` is missing:
 
 ```bash
-npm install
-```
-
-Install the Playwright Chromium browser:
-
-```bash
+npm install playwright
 npx playwright install chromium
 ```
 
-Create a saved browser session:
-
-```bash
-node saveAuth.js
-```
-
-Log in when the browser opens, then press Enter in the console. This writes `auth.json`, which is ignored by git.
-
 ## Configure
 
-Open `main.js` and add your Handshake project tasks URL to `PROJECT_TASKS_URL` near line 4:
+Create `config.json` in this folder and put your Handshake project tasks URL in
+it:
 
-```js
-const PROJECT_TASKS_URL =
-  "https://ai.joinhandshake.com/fellow/YOUR_PROJECT_ID/tasks";
+```json
+{
+  "projectTasksUrl": "https://ai.joinhandshake.com/fellow/YOUR_PROJECT_ID/tasks"
+}
 ```
+
+`config.json` is ignored by git.
 
 ## Run
 
@@ -39,11 +38,17 @@ const PROJECT_TASKS_URL =
 node main.js
 ```
 
-The script opens the configured project task page, checks each task ID, and writes the results to `stages.json`.
+If this is your first run, or if `auth.json` was deleted, a browser opens for
+login automatically. After you finish logging in, press Enter in the terminal.
+The script saves `auth.json` and continues.
+
+The script uses the `task.listClaimedTasksForFellow` endpoint, which matches the
+**My tasks** tab. It fetches active and past tasks, writes task IDs to
+`ids.json`, writes stage results to `stages.json`, and prints a stage summary.
 
 Generated files:
 
+- `auth.json`
+- `config.json`
 - `ids.json`
 - `stages.json`
-
-Both generated files are ignored by git.
