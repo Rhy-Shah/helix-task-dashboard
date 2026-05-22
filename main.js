@@ -3,7 +3,10 @@ const readline = require("readline/promises");
 
 const CONFIG_PATH = "config.json";
 const AUTH_STATE_PATH = "auth.json";
-const PAGE_SIZE = 1000;
+const TASK_IDS_PATH = "task-ids.txt";
+const PAGE_SIZE = 20;
+const TASK_ID_PATTERN =
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 
 function loadProjectTasksUrl() {
   if (!fs.existsSync(CONFIG_PATH)) {
@@ -24,11 +27,16 @@ function loadProjectTasksUrl() {
 }
 
 function getProjectId(projectTasksUrl) {
-  const match = projectTasksUrl.match(/\/fellow\/([^/]+)\/tasks/i);
+  const url = new URL(projectTasksUrl);
+  const taskPageMatch = url.pathname.match(/^\/fellow\/([^/]+)\/tasks\/?$/i);
+  const projectPageMatch = url.pathname.match(
+    /^\/fellow\/projects\/(?:active|past)\/([^/]+)\/?$/i
+  );
+  const match = taskPageMatch || projectPageMatch;
 
   if (!match) {
     throw new Error(
-      "PROJECT_TASKS_URL must look like https://ai.joinhandshake.com/fellow/PROJECT_ID/tasks."
+      "PROJECT_TASKS_URL must be a Handshake project tasks URL or project page URL."
     );
   }
 
@@ -142,6 +150,47 @@ function extractTaskStages(apiPayload) {
   }));
 }
 
+function parseTaskIds(text) {
+  const seen = new Set();
+  const ids = [];
+  const matches = text.match(TASK_ID_PATTERN) || [];
+
+  for (const match of matches) {
+    const id = match.toLowerCase();
+
+    if (!seen.has(id)) {
+      seen.add(id);
+      ids.push(id);
+    }
+  }
+
+  return ids;
+}
+
+function loadTaskIds() {
+  if (!fs.existsSync(TASK_IDS_PATH)) {
+    return [];
+  }
+
+  const ids = parseTaskIds(fs.readFileSync(TASK_IDS_PATH, "utf8"));
+
+  if (ids.length === 0) {
+    throw new Error(`${TASK_IDS_PATH} exists but does not contain any task IDs.`);
+  }
+
+  return ids;
+}
+
+function filterTaskStagesByTaskIds(results, taskIds) {
+  const resultsById = new Map(results.map((result) => [result.id.toLowerCase(), result]));
+
+  return taskIds.map((id) => {
+    const result = resultsById.get(id.toLowerCase());
+
+    return result || { id, stage: "Not found in My tasks" };
+  });
+}
+
 async function fetchTasksPage(projectTasksUrl, storageState, limit, offset) {
   const projectId = getProjectId(projectTasksUrl);
   const apiUrl = buildMyTasksUrl(projectTasksUrl, projectId, limit, offset);
@@ -183,16 +232,39 @@ async function fetchTasksPage(projectTasksUrl, storageState, limit, offset) {
   return response.json();
 }
 
-async function fetchAllTaskStages(projectTasksUrl, storageState, pageSize = PAGE_SIZE) {
+async function fetchAllTaskStages(
+  projectTasksUrl,
+  storageState,
+  pageSize = PAGE_SIZE,
+  fetchPage = fetchTasksPage
+) {
   const results = [];
 
   for (let offset = 0; ; offset += pageSize) {
-    const payload = await fetchTasksPage(
-      projectTasksUrl,
-      storageState,
-      pageSize,
-      offset
-    );
+    let payload;
+
+    try {
+      payload = await fetchPage(projectTasksUrl, storageState, pageSize, offset);
+    } catch (err) {
+      if (offset === 0 || !err.message.includes("status 500")) {
+        throw err;
+      }
+
+      const nextPayload = await fetchPage(
+        projectTasksUrl,
+        storageState,
+        pageSize,
+        offset + pageSize
+      );
+      const nextTasks = extractTasks(nextPayload);
+
+      if (nextTasks.length === 0) {
+        break;
+      }
+
+      throw err;
+    }
+
     const tasks = extractTasks(payload);
 
     results.push(...extractTaskStages(payload));
@@ -310,8 +382,17 @@ async function main() {
   const storageState = await loadOrCreateAuthState(projectTasksUrl);
 
   console.log("Fetching My tasks from Handshake API...");
-  const results = await fetchAllTaskStages(projectTasksUrl, storageState);
+  const requestedTaskIds = loadTaskIds();
+  const fetchedResults = await fetchAllTaskStages(projectTasksUrl, storageState);
+  const results =
+    requestedTaskIds.length > 0
+      ? filterTaskStagesByTaskIds(fetchedResults, requestedTaskIds)
+      : fetchedResults;
   const ids = results.map((result) => result.id);
+
+  if (requestedTaskIds.length > 0) {
+    console.log(`Using ${requestedTaskIds.length} task IDs from ${TASK_IDS_PATH}`);
+  }
 
   console.log(`Found ${ids.length} IDs`);
   fs.writeFileSync("ids.json", JSON.stringify(ids, null, 2));
@@ -332,9 +413,14 @@ if (require.main === module) {
 }
 
 module.exports = {
+  PAGE_SIZE,
   buildMyTasksUrl,
   createCookieHeader,
+  extractTasks,
   extractTaskStages,
   fetchAllTaskStages,
+  fetchTasksPage,
+  filterTaskStagesByTaskIds,
   getProjectId,
+  parseTaskIds,
 };

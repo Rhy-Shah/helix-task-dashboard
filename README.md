@@ -21,16 +21,21 @@ npx playwright install chromium
 
 ## Configure
 
-Create `config.json` in this folder and put your Handshake project tasks URL in
-it:
+Create `config.json` in this folder and put your Handshake project page or
+project tasks URL in it:
 
 ```json
 {
-  "projectTasksUrl": "https://ai.joinhandshake.com/fellow/YOUR_PROJECT_ID/tasks"
+  "projectTasksUrl": "https://ai.joinhandshake.com/fellow/projects/past/YOUR_PROJECT_ID"
 }
 ```
 
 `config.json` is ignored by git.
+
+Optionally create `task-ids.txt` in this folder with one task ID per line. When
+that file exists, the script fetches your Handshake tasks and reports stages for
+only those IDs, preserving the order from `task-ids.txt`. IDs that are not found
+in your **My tasks** response are shown as `Not found in My tasks`.
 
 ## Run
 
@@ -52,3 +57,28 @@ Generated files:
 - `config.json`
 - `ids.json`
 - `stages.json`
+
+## Dashboard
+
+Generate the static dashboard data after fetching tasks:
+
+```bash
+npm run dashboard:data
+```
+
+Then open `dashboard/index.html` in a browser. The dashboard shows all fetched
+task IDs, stages, build status, summary counts, extra IDs found in Handshake,
+and submitted IDs that were not found in **My tasks**.
+
+## Web App
+
+Run the local web app:
+
+```bash
+npm start
+```
+
+Open `http://localhost:4173`. Users can connect through Handshake's own login
+window, fetch Project Helix, copy task IDs from the current filters, and view
+task IDs, stages, build status, and summaries. Saved web sessions are stored in
+`.sessions/`, which is ignored by git.
