@@ -551,6 +551,12 @@ td {
   font-size: 12.5px;
 }
 
+.muted-cell {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;

@@ -114,7 +114,57 @@ function normalizeProjectList(activeProjects = [], pastProjects = []) {
   return projects;
 }
 
+function pickFirst(values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return null;
+}
+
+function pickFirstIsoLike(values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.length >= 8) return value;
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (value instanceof Date) return value.toISOString();
+  }
+  return null;
+}
+
 function normalizeTask(task, project = {}) {
+  const data = task.data || {};
+  const stage = task.$related?.pipelineStage || task.pipelineStage || {};
+
+  const submittedAt = pickFirstIsoLike([
+    task.submittedAt,
+    task.submitted_at,
+    task.deliveredAt,
+    task.delivered_at,
+    task.completedAt,
+    task.completed_at,
+    task.finishedAt,
+    data.submitted_at,
+    data.submittedAt,
+    data.delivered_at,
+    data.deliveredAt,
+    data.completed_at,
+  ]);
+
+  const updatedAt = pickFirstIsoLike([
+    task.statusUpdatedAt,
+    task.status_updated_at,
+    task.lastStatusChangeAt,
+    task.lastActionAt,
+    task.last_action_at,
+    task.updatedAt,
+    task.updated_at,
+    task.modifiedAt,
+    task.lastModifiedAt,
+    stage.enteredAt,
+    stage.updated_at,
+    data.status_updated_at,
+    data.updated_at,
+  ]);
+
   return {
     id: task.id,
     projectId: project.id || task.annotationProjectId || "",
@@ -123,9 +173,11 @@ function normalizeTask(task, project = {}) {
       task.$related?.pipelineStage?.name ||
       task.pipelineStage?.name ||
       "No stage found",
-    status: task.status ?? task.taskStatus ?? task.reviewStatus ?? task.state ?? null,
+    status: pickFirst([task.status, task.taskStatus, task.reviewStatus, task.state]),
     buildStatus: task.buildStatus ?? null,
-    title: task.data?.task_title || task.title || "",
+    title: data.task_title || task.title || "",
+    submittedAt,
+    updatedAt,
   };
 }
 
@@ -237,6 +289,12 @@ async function fetchDashboardForProject(projectInput, storageState, options = {}
       id: projectId,
       name: `Project ${projectId.slice(0, 8)}`,
     };
+
+  if (process.env.DEBUG_TASKS === "1" && tasks[0]) {
+    console.log("[DEBUG_TASKS] first raw task keys:", Object.keys(tasks[0]));
+    console.log("[DEBUG_TASKS] first raw task json:");
+    console.log(JSON.stringify(tasks[0], null, 2));
+  }
 
   return buildDashboardPayload({ project, tasks });
 }
