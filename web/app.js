@@ -297,8 +297,8 @@ function renderTable() {
           <td><span class="pill ${pillClass(task.buildStatus || "None")}">${escapeHtml(
             task.buildStatus || "None"
           )}</span></td>
-          <td class="muted-cell" title="${escapeHtml(task.submittedAt || "")}">${escapeHtml(
-            formatDate(task.submittedAt)
+          <td class="muted-cell" title="${escapeHtml(task.startedAt || "")}">${escapeHtml(
+            formatDate(task.startedAt)
           )}</td>
           <td class="muted-cell" title="${escapeHtml(task.updatedAt || "")}">${escapeHtml(
             formatDate(task.updatedAt)
