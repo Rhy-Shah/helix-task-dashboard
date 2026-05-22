@@ -4,6 +4,7 @@ const test = require("node:test");
 const {
   createAppServer,
   createSessionId,
+  createSessionStore,
   getHelixProject,
   parseCookies,
 } = require("./server");
@@ -15,12 +16,26 @@ test("parseCookies reads URL encoded cookie values", () => {
   });
 });
 
-test("createSessionId returns unique UUID session ids", () => {
+test("createSessionId returns long random session ids", () => {
   const first = createSessionId();
   const second = createSessionId();
 
-  assert.match(first, /^[0-9a-f-]{36}$/);
+  assert.equal(typeof first, "string");
+  assert.ok(first.length >= 24);
   assert.notEqual(first, second);
+});
+
+test("createSessionStore stores and clears in-memory auth state", () => {
+  const store = createSessionStore();
+
+  store.ensure("s1");
+  assert.equal(store.size(), 1);
+
+  store.setAuth("s1", { cookies: [{ name: "_trajectory_session", value: "x" }] });
+  assert.equal(store.get("s1").authState.cookies[0].name, "_trajectory_session");
+
+  store.clear("s1");
+  assert.equal(store.get("s1"), null);
 });
 
 test("createAppServer returns an HTTP server instance", () => {
@@ -28,6 +43,7 @@ test("createAppServer returns an HTTP server instance", () => {
 
   assert.equal(typeof server.listen, "function");
   assert.equal(typeof server.close, "function");
+  server.close();
 });
 
 test("getHelixProject reads the configured Project Helix URL", () => {
