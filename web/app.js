@@ -250,7 +250,6 @@ function filteredTasks() {
       task.id,
       task.projectName,
       task.stage,
-      task.status || "",
       buildStatus,
       task.title || "",
     ]
@@ -280,7 +279,7 @@ function renderTable() {
 
   if (tasks.length === 0) {
     elements.taskTable.innerHTML = `
-      <tr><td colspan="7" style="padding: 32px; text-align: center; color: var(--muted);">
+      <tr><td colspan="6" style="padding: 32px; text-align: center; color: var(--muted);">
         No tasks match the current filters.
       </td></tr>
     `;
@@ -293,7 +292,6 @@ function renderTable() {
         <tr>
           <td class="mono">${escapeHtml(task.id)}</td>
           <td><span class="pill ${pillClass(task.stage)}">${escapeHtml(task.stage)}</span></td>
-          <td>${escapeHtml(task.status || "—")}</td>
           <td><span class="pill ${pillClass(task.buildStatus || "None")}">${escapeHtml(
             task.buildStatus || "None"
           )}</span></td>
