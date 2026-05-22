@@ -3,6 +3,46 @@ const state = {
   dashboard: null,
   helixProject: null,
   loginWindowOpen: false,
+  quickFilter: null,
+};
+
+const PRIMARY_STAGES = new Set([
+  "Delivered",
+  "Ready to Deliver",
+  "Internal Audit",
+  "Pass@n",
+  "Pass@0",
+  "Submitted for Pass@",
+]);
+
+const QUICK_FILTERS = {
+  delivered_ready: {
+    label: "Delivered & Ready",
+    sub: "Delivered + Ready to Deliver",
+    accent: "green",
+    test: (task) => task.stage === "Delivered" || task.stage === "Ready to Deliver",
+  },
+  internal_audit: {
+    label: "Internal Audit",
+    sub: "invalid or rejected",
+    accent: "blue",
+    test: (task) => /internal audit/i.test(task.stage || ""),
+  },
+  pass_at: {
+    label: "Pass@",
+    sub: "Pass@n + Pass@0 + Submitted",
+    accent: "violet",
+    test: (task) => {
+      const s = task.stage || "";
+      return s === "Pass@n" || s === "Pass@0" || s === "Submitted for Pass@";
+    },
+  },
+  other: {
+    label: "Other",
+    sub: "Review, failing, misc.",
+    accent: "amber",
+    test: (task) => !PRIMARY_STAGES.has(task.stage || ""),
+  },
 };
 
 const elements = {
@@ -13,7 +53,6 @@ const elements = {
   saveLoginButton: document.querySelector("#save-login-button"),
   logoutButton: document.querySelector("#logout-button"),
   fetchProjectButton: document.querySelector("#fetch-project-button"),
-  helixProjectName: document.querySelector("#helix-project-name"),
   helixProjectId: document.querySelector("#helix-project-id"),
   message: document.querySelector("#message"),
   dashboard: document.querySelector("#dashboard"),
@@ -24,15 +63,10 @@ const elements = {
   stageFilter: document.querySelector("#stage-filter"),
   buildFilter: document.querySelector("#build-filter"),
   resultCount: document.querySelector("#result-count"),
-  dashboardNote: document.querySelector("#dashboard-note"),
   copyVisibleButton: document.querySelector("#copy-visible-button"),
-  copyDeliveredButton: document.querySelector("#copy-delivered-button"),
-  copyReadyButton: document.querySelector("#copy-ready-button"),
+  copyCount: document.querySelector("#copy-count"),
+  clearFiltersButton: document.querySelector("#clear-filters-button"),
   taskTable: document.querySelector("#task-table"),
-  stageTotal: document.querySelector("#stage-total"),
-  stageBars: document.querySelector("#stage-bars"),
-  attentionCount: document.querySelector("#attention-count"),
-  attentionList: document.querySelector("#attention-list"),
 };
 
 function escapeHtml(value) {
@@ -72,13 +106,13 @@ function clearMessage() {
 }
 
 function setBusy(button, busyText) {
-  const original = button.textContent;
+  const original = button.innerHTML;
   button.disabled = true;
   button.textContent = busyText;
 
   return () => {
     button.disabled = false;
-    button.textContent = original;
+    button.innerHTML = original;
   };
 }
 
@@ -88,53 +122,104 @@ function renderConnection(profile) {
     ? `Connected${profile?.name ? ` as ${profile.name}` : ""}`
     : "Not connected";
   elements.connectionCopy.textContent = state.connected
-    ? "Ready to fetch task IDs and statuses."
+    ? "Ready to fetch your Helix tasks."
     : "Open Handshake login to create a local session.";
   elements.saveLoginButton.disabled = !state.loginWindowOpen;
 
-  if (state.helixProject) {
-    elements.helixProjectName.textContent = state.helixProject.name;
-    elements.helixProjectId.textContent = state.helixProject.id;
+  if (state.helixProject && elements.helixProjectId) {
+    elements.helixProjectId.textContent = state.helixProject.id || "";
   }
 }
 
 function pillClass(value) {
-  if (value === "failing") return "coral";
-  if (value === "passing" || value === "Delivered") return "green";
-  if (/Review|Submitted|Ready/.test(value)) return "blue";
-  return "ochre";
+  const v = String(value || "");
+  if (v === "failing") return "coral";
+  if (v === "passing" || v === "Delivered") return "green";
+  if (/Review|Submitted/.test(v)) return "blue";
+  if (/Ready/.test(v)) return "violet";
+  if (v === "None" || v === "No stage found") return "amber";
+  return "amber";
 }
 
 function unique(values) {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 
+function countByPredicate(predicate) {
+  const tasks = state.dashboard?.tasks || [];
+  return tasks.reduce((n, task) => (predicate(task) ? n + 1 : n), 0);
+}
+
 function renderSummary() {
   const summary = state.dashboard.summary || {};
+  const total = summary.total || 0;
+
+  const filterKeys = ["delivered_ready", "internal_audit", "pass_at", "other"];
   const cards = [
-    ["Tasks", summary.total],
-    ["Project", state.dashboard.project ? 1 : 0],
-    ["Review", summary.reviewCount],
-    ["Failing", summary.failingCount],
-    ["Task IDs", state.dashboard.ids?.length || 0],
+    { key: "all", label: "Total tasks", sub: "click to clear filter", value: total, accent: "violet" },
+    ...filterKeys.map((key) => ({
+      key,
+      label: QUICK_FILTERS[key].label,
+      sub: QUICK_FILTERS[key].sub,
+      value: countByPredicate(QUICK_FILTERS[key].test),
+      accent: QUICK_FILTERS[key].accent,
+    })),
   ];
 
   elements.summaryGrid.innerHTML = cards
-    .map(
-      ([label, value]) => `
-        <div class="metric">
-          <strong>${value ?? 0}</strong>
-          <span>${label}</span>
-        </div>
-      `
-    )
+    .map(({ key, label, sub, value, accent }) => {
+      const isActive =
+        state.quickFilter === key || (key === "all" && !state.quickFilter);
+      return `
+        <button type="button" class="metric metric-button accent-${accent}${
+        isActive ? " active" : ""
+      }" data-quick="${key}">
+          <strong>${value}</strong>
+          <span class="metric-label">${escapeHtml(label)}</span>
+          ${sub ? `<small class="metric-sub">${escapeHtml(sub)}</small>` : ""}
+        </button>
+      `;
+    })
     .join("");
+
+  elements.summaryGrid.querySelectorAll(".metric-button").forEach((node) => {
+    node.addEventListener("click", () => {
+      const key = node.dataset.quick;
+      setQuickFilter(key === "all" ? null : key);
+    });
+  });
+}
+
+function setQuickFilter(key) {
+  state.quickFilter = key;
+  elements.searchInput.value = "";
+  elements.stageFilter.value = "all";
+  elements.buildFilter.value = "all";
+  renderTable();
+  renderSummary();
+  updateClearFilterButton();
+}
+
+function hasActiveFilter() {
+  return (
+    state.quickFilter ||
+    elements.searchInput.value.trim() ||
+    elements.stageFilter.value !== "all" ||
+    elements.buildFilter.value !== "all"
+  );
+}
+
+function updateClearFilterButton() {
+  elements.clearFiltersButton.hidden = !hasActiveFilter();
 }
 
 function renderFilters() {
   const tasks = state.dashboard.tasks || [];
   const stages = unique(tasks.map((task) => task.stage || "No stage found"));
   const builds = unique(tasks.map((task) => task.buildStatus || "None"));
+
+  const prevStage = elements.stageFilter.value;
+  const prevBuild = elements.buildFilter.value;
 
   elements.stageFilter.innerHTML = [
     '<option value="all">All stages</option>',
@@ -144,6 +229,13 @@ function renderFilters() {
     '<option value="all">All builds</option>',
     ...builds.map((build) => `<option value="${escapeHtml(build)}">${escapeHtml(build)}</option>`),
   ].join("");
+
+  if (prevStage && [...elements.stageFilter.options].some((o) => o.value === prevStage)) {
+    elements.stageFilter.value = prevStage;
+  }
+  if (prevBuild && [...elements.buildFilter.options].some((o) => o.value === prevBuild)) {
+    elements.buildFilter.value = prevBuild;
+  }
 }
 
 function filteredTasks() {
@@ -151,6 +243,7 @@ function filteredTasks() {
   const query = elements.searchInput.value.trim().toLowerCase();
   const stage = elements.stageFilter.value;
   const build = elements.buildFilter.value;
+  const quick = state.quickFilter ? QUICK_FILTERS[state.quickFilter] : null;
 
   return tasks.filter((task) => {
     const buildStatus = task.buildStatus || "None";
@@ -168,24 +261,40 @@ function filteredTasks() {
     return (
       (!query || searchable.includes(query)) &&
       (stage === "all" || task.stage === stage) &&
-      (build === "all" || buildStatus === build)
+      (build === "all" || buildStatus === build) &&
+      (!quick || quick.test(task))
     );
   });
 }
 
 function renderTable() {
   const tasks = filteredTasks();
+  const total = state.dashboard?.tasks?.length || 0;
 
-  elements.resultCount.textContent = `${tasks.length} visible tasks`;
-  elements.dashboardNote.textContent = "Fetched from the connected Handshake session";
+  elements.resultCount.textContent =
+    tasks.length === total
+      ? `${tasks.length} tasks`
+      : `${tasks.length} of ${total} tasks`;
+
+  elements.copyCount.textContent = tasks.length;
+  elements.copyVisibleButton.disabled = tasks.length === 0;
+
+  if (tasks.length === 0) {
+    elements.taskTable.innerHTML = `
+      <tr><td colspan="5" style="padding: 32px; text-align: center; color: var(--muted);">
+        No tasks match the current filters.
+      </td></tr>
+    `;
+    return;
+  }
+
   elements.taskTable.innerHTML = tasks
     .map(
       (task) => `
         <tr>
           <td class="mono">${escapeHtml(task.id)}</td>
-          <td>${escapeHtml(task.projectName || task.projectId || "")}</td>
           <td><span class="pill ${pillClass(task.stage)}">${escapeHtml(task.stage)}</span></td>
-          <td>${escapeHtml(task.status || "None")}</td>
+          <td>${escapeHtml(task.status || "—")}</td>
           <td><span class="pill ${pillClass(task.buildStatus || "None")}">${escapeHtml(
             task.buildStatus || "None"
           )}</span></td>
@@ -196,64 +305,17 @@ function renderTable() {
     .join("");
 }
 
-function renderStageBars() {
-  const summary = state.dashboard.summary || {};
-  const entries = Object.entries(summary.stageCounts || {}).sort((a, b) => b[1] - a[1]);
-  const max = Math.max(...entries.map(([, count]) => count), 1);
-
-  elements.stageTotal.textContent = `${summary.total || 0} tasks`;
-  elements.stageBars.innerHTML = entries
-    .map(([stage, count]) => {
-      const width = Math.max(4, Math.round((count / max) * 100));
-
-      return `
-        <div class="bar-row">
-          <span>${escapeHtml(stage)}</span>
-          <div class="bar-track"><div class="bar-fill" style="width:${width}%"></div></div>
-          <strong>${count}</strong>
-        </div>
-      `;
-    })
-    .join("");
-}
-
-function renderAttention() {
-  const summary = state.dashboard.summary || {};
-  const items = [
-    ...(summary.failingTasks || []).map((task) => ({ label: "Failing build", task })),
-    ...(summary.reviewTasks || []).slice(0, 8).map((task) => ({ label: "In review", task })),
-  ];
-
-  elements.attentionCount.textContent = `${items.length} highlighted`;
-  elements.attentionList.innerHTML =
-    items.length === 0
-      ? '<div class="attention-item">No failing builds or review-pending tasks.</div>'
-      : items
-          .map(
-            ({ label, task }) => `
-              <div class="attention-item">
-                <strong>${escapeHtml(label)}</strong>
-                <span class="mono">${escapeHtml(task.id)}</span>
-                <span>${escapeHtml(task.projectName || "")} · ${escapeHtml(task.stage)}</span>
-              </div>
-            `
-          )
-          .join("");
-}
-
 function renderDashboard() {
   elements.dashboard.hidden = false;
-  elements.dashboardTitle.textContent = state.dashboard.project
-    ? `${state.dashboard.project.name || "Project"} Tasks`
-    : "Project Helix Tasks";
-  elements.generatedAt.textContent = `Generated ${new Date(
+  elements.dashboardTitle.textContent = "Project Helix Tasks";
+  elements.generatedAt.textContent = `Updated ${new Date(
     state.dashboard.generatedAt
   ).toLocaleString()}`;
+  state.quickFilter = null;
   renderSummary();
   renderFilters();
   renderTable();
-  renderStageBars();
-  renderAttention();
+  updateClearFilterButton();
 }
 
 async function loadStatus() {
@@ -342,7 +404,17 @@ async function writeClipboard(text) {
   document.body.removeChild(textarea);
 }
 
-async function copyTaskIds(label, tasks) {
+function flashCopySuccess(button, originalLabel) {
+  const labelEl = button.querySelector(".copy-label");
+  if (labelEl) {
+    labelEl.textContent = "Copied!";
+    setTimeout(() => {
+      labelEl.textContent = originalLabel;
+    }, 1400);
+  }
+}
+
+async function copyTaskIds(label, tasks, button) {
   const ids = tasks.map((task) => task.id);
 
   if (ids.length === 0) {
@@ -351,11 +423,8 @@ async function copyTaskIds(label, tasks) {
   }
 
   await writeClipboard(ids.join("\n"));
-  showMessage(`Copied ${ids.length} ${label} task IDs.`);
-}
-
-function stageTasks(stage) {
-  return (state.dashboard?.tasks || []).filter((task) => task.stage === stage);
+  showMessage(`Copied ${ids.length} ${label} task ID${ids.length === 1 ? "" : "s"} to clipboard.`);
+  if (button) flashCopySuccess(button, "Copy Filtered IDs");
 }
 
 elements.connectButton.addEventListener("click", startLogin);
@@ -363,16 +432,26 @@ elements.saveLoginButton.addEventListener("click", saveLogin);
 elements.logoutButton.addEventListener("click", logout);
 elements.fetchProjectButton.addEventListener("click", fetchProject);
 elements.copyVisibleButton.addEventListener("click", () =>
-  copyTaskIds("visible", filteredTasks())
+  copyTaskIds("filtered", filteredTasks(), elements.copyVisibleButton)
 );
-elements.copyDeliveredButton.addEventListener("click", () =>
-  copyTaskIds("delivered", stageTasks("Delivered"))
-);
-elements.copyReadyButton.addEventListener("click", () =>
-  copyTaskIds("ready to deliver", stageTasks("Ready to Deliver"))
-);
+elements.clearFiltersButton.addEventListener("click", () => setQuickFilter(null));
 [elements.searchInput, elements.stageFilter, elements.buildFilter].forEach((control) => {
-  control.addEventListener("input", renderTable);
+  control.addEventListener("input", () => {
+    if (state.quickFilter) {
+      state.quickFilter = null;
+      renderSummary();
+    }
+    renderTable();
+    updateClearFilterButton();
+  });
+  control.addEventListener("change", () => {
+    if (state.quickFilter) {
+      state.quickFilter = null;
+      renderSummary();
+    }
+    renderTable();
+    updateClearFilterButton();
+  });
 });
 
 loadStatus().catch((err) => showMessage(err.message, "error"));
