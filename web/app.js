@@ -280,7 +280,7 @@ function renderTable() {
 
   if (tasks.length === 0) {
     elements.taskTable.innerHTML = `
-      <tr><td colspan="5" style="padding: 32px; text-align: center; color: var(--muted);">
+      <tr><td colspan="7" style="padding: 32px; text-align: center; color: var(--muted);">
         No tasks match the current filters.
       </td></tr>
     `;
@@ -297,11 +297,28 @@ function renderTable() {
           <td><span class="pill ${pillClass(task.buildStatus || "None")}">${escapeHtml(
             task.buildStatus || "None"
           )}</span></td>
+          <td class="muted-cell" title="${escapeHtml(task.submittedAt || "")}">${escapeHtml(
+            formatDate(task.submittedAt)
+          )}</td>
+          <td class="muted-cell" title="${escapeHtml(task.updatedAt || "")}">${escapeHtml(
+            formatDate(task.updatedAt)
+          )}</td>
           <td>${escapeHtml(task.title || "")}</td>
         </tr>
       `
     )
     .join("");
+}
+
+function formatDate(value) {
+  if (!value) return "—";
+  const date = typeof value === "number" ? new Date(value) : new Date(String(value));
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function renderDashboard() {
