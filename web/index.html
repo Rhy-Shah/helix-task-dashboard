@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Handshake Task Desk</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="masthead">
+        <div>
+          <p class="eyebrow">Handshake Task Desk</p>
+          <h1>Track every project task from one calm dashboard.</h1>
+        </div>
+        <div class="status-card" id="connection-card">
+          <span class="status-dot"></span>
+          <div>
+            <strong id="connection-title">Checking session</strong>
+            <p id="connection-copy">Looking for a saved Handshake login.</p>
+          </div>
+        </div>
+      </header>
+
+      <section class="control-deck">
+        <article class="panel connect-panel">
+          <div class="panel-title">
+            <span>1</span>
+            <div>
+              <h2>Connect Handshake</h2>
+              <p>Use Handshake's own login window, then save the session here.</p>
+            </div>
+          </div>
+          <div class="action-row">
+            <button class="primary" id="connect-button">Open Handshake Login</button>
+            <button id="save-login-button" disabled>Save Login</button>
+            <button class="ghost" id="logout-button">Log Out</button>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-title">
+            <span>2</span>
+            <div>
+              <h2>Project Helix</h2>
+              <p>This dashboard is scoped to the configured Helix project.</p>
+            </div>
+          </div>
+          <div class="helix-scope">
+            <span>Locked scope</span>
+            <strong id="helix-project-name">Project Helix</strong>
+            <p id="helix-project-id">Loading Helix project ID...</p>
+          </div>
+          <div class="action-row">
+            <button class="primary" id="fetch-project-button">Fetch Project Helix</button>
+          </div>
+        </article>
+      </section>
+
+      <section class="message" id="message" hidden></section>
+
+      <section class="dashboard" id="dashboard" hidden>
+        <div class="dashboard-heading">
+          <div>
+            <p class="eyebrow">Live dashboard</p>
+            <h2 id="dashboard-title">Task Summary</h2>
+          </div>
+          <p id="generated-at"></p>
+        </div>
+
+        <div class="summary-grid" id="summary-grid"></div>
+
+        <div class="dashboard-grid">
+          <article class="panel span-2">
+            <div class="toolbar">
+              <label>
+                <span>Search tasks</span>
+                <input id="search-input" type="search" placeholder="Task ID, stage, title, project" />
+              </label>
+              <label>
+                <span>Stage</span>
+                <select id="stage-filter"></select>
+              </label>
+              <label>
+                <span>Build</span>
+                <select id="build-filter"></select>
+              </label>
+            </div>
+            <div class="table-meta">
+              <strong id="result-count">0 tasks</strong>
+              <span id="dashboard-note"></span>
+            </div>
+            <div class="copy-row">
+              <button id="copy-visible-button">Copy Visible IDs</button>
+              <button id="copy-delivered-button">Copy Delivered IDs</button>
+              <button id="copy-ready-button">Copy Ready to Deliver IDs</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Task ID</th>
+                    <th>Project</th>
+                    <th>Stage</th>
+                    <th>Status</th>
+                    <th>Build</th>
+                    <th>Title</th>
+                  </tr>
+                </thead>
+                <tbody id="task-table"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <h2>Stage Mix</h2>
+              <span id="stage-total"></span>
+            </div>
+            <div class="bars" id="stage-bars"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <h2>Needs Attention</h2>
+              <span id="attention-count"></span>
+            </div>
+            <div class="attention-list" id="attention-list"></div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
