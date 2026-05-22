@@ -79,24 +79,21 @@ test("buildDashboardPayload creates task summaries with project context", () => 
     status: null,
     buildStatus: "failing",
     title: "Fix a thing",
-    startedAt: null,
     updatedAt: null,
   });
 });
 
-test("normalizeTask extracts startedAt and updatedAt from common shapes", () => {
+test("normalizeTask extracts updatedAt from common shapes", () => {
   const { normalizeTask } = require("./handshake-api");
 
   const task = normalizeTask(
     {
       id: "t-1",
       pipelineStage: { name: "Delivered", enteredAt: "2026-05-22T10:00:00Z" },
-      createdAt: "2026-05-15T09:00:00Z",
       data: { task_title: "Hi" },
     },
     { id: "p-1", name: "P" }
   );
 
-  assert.equal(task.startedAt, "2026-05-15T09:00:00Z");
   assert.equal(task.updatedAt, "2026-05-22T10:00:00Z");
 });

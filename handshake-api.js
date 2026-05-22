@@ -134,21 +134,6 @@ function normalizeTask(task, project = {}) {
   const data = task.data || {};
   const stage = task.$related?.pipelineStage || task.pipelineStage || {};
 
-  const startedAt = pickFirstIsoLike([
-    task.createdAt,
-    task.created_at,
-    task.startedAt,
-    task.started_at,
-    task.assignedAt,
-    task.assigned_at,
-    task.claimedAt,
-    task.claimed_at,
-    task.openedAt,
-    data.created_at,
-    data.createdAt,
-    data.started_at,
-  ]);
-
   const updatedAt = pickFirstIsoLike([
     task.statusUpdatedAt,
     task.status_updated_at,
@@ -176,7 +161,6 @@ function normalizeTask(task, project = {}) {
     status: pickFirst([task.status, task.taskStatus, task.reviewStatus, task.state]),
     buildStatus: task.buildStatus ?? null,
     title: data.task_title || task.title || "",
-    startedAt,
     updatedAt,
   };
 }
