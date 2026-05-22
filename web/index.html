@@ -3,15 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Handshake Task Desk</title>
+    <title>Project Helix Tasks</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main class="app-shell">
       <header class="masthead">
-        <div>
-          <p class="eyebrow">Handshake Task Desk</p>
-          <h1>Track every project task from one calm dashboard.</h1>
+        <div class="masthead-copy">
+          <p class="eyebrow">Helix dashboard</p>
+          <h1>Project Helix Tasks</h1>
+          <p class="subtitle">Track every task, stage, and build in one place.</p>
         </div>
         <div class="status-card" id="connection-card">
           <span class="status-dot"></span>
@@ -25,10 +26,10 @@
       <section class="control-deck">
         <article class="panel connect-panel">
           <div class="panel-title">
-            <span>1</span>
+            <span class="step-num">1</span>
             <div>
-              <h2>Connect Handshake</h2>
-              <p>Use Handshake's own login window, then save the session here.</p>
+              <h2>Sign in to Handshake</h2>
+              <p>Open the Handshake login window, then save your session here.</p>
             </div>
           </div>
           <div class="action-row">
@@ -40,19 +41,15 @@
 
         <article class="panel">
           <div class="panel-title">
-            <span>2</span>
+            <span class="step-num">2</span>
             <div>
-              <h2>Project Helix</h2>
-              <p>This dashboard is scoped to the configured Helix project.</p>
+              <h2>Load tasks</h2>
+              <p>Pull the latest Project Helix tasks from your account.</p>
             </div>
           </div>
-          <div class="helix-scope">
-            <span>Locked scope</span>
-            <strong id="helix-project-name">Project Helix</strong>
-            <p id="helix-project-id">Loading Helix project ID...</p>
-          </div>
           <div class="action-row">
-            <button class="primary" id="fetch-project-button">Fetch Project Helix</button>
+            <button class="primary" id="fetch-project-button">Fetch Project Helix Tasks</button>
+            <span class="project-id mono" id="helix-project-id" title="Helix project ID"></span>
           </div>
         </article>
       </section>
@@ -63,7 +60,7 @@
         <div class="dashboard-heading">
           <div>
             <p class="eyebrow">Live dashboard</p>
-            <h2 id="dashboard-title">Task Summary</h2>
+            <h2 id="dashboard-title">Project Helix Tasks</h2>
           </div>
           <p id="generated-at"></p>
         </div>
@@ -72,10 +69,14 @@
 
         <div class="dashboard-grid">
           <article class="panel span-2">
+            <div class="panel-heading">
+              <h2>Tasks</h2>
+              <span id="result-count" class="muted">0 tasks</span>
+            </div>
             <div class="toolbar">
               <label>
-                <span>Search tasks</span>
-                <input id="search-input" type="search" placeholder="Task ID, stage, title, project" />
+                <span>Search</span>
+                <input id="search-input" type="search" placeholder="Task ID, stage, title..." />
               </label>
               <label>
                 <span>Stage</span>
@@ -86,21 +87,21 @@
                 <select id="build-filter"></select>
               </label>
             </div>
-            <div class="table-meta">
-              <strong id="result-count">0 tasks</strong>
-              <span id="dashboard-note"></span>
+
+            <div class="copy-bar">
+              <button class="primary copy-primary" id="copy-visible-button">
+                <span class="copy-icon" aria-hidden="true">⧉</span>
+                <span class="copy-label">Copy Filtered IDs</span>
+                <span class="copy-count" id="copy-count">0</span>
+              </button>
+              <button class="chip" id="clear-filters-button" hidden>Clear filters</button>
             </div>
-            <div class="copy-row">
-              <button id="copy-visible-button">Copy Visible IDs</button>
-              <button id="copy-delivered-button">Copy Delivered IDs</button>
-              <button id="copy-ready-button">Copy Ready to Deliver IDs</button>
-            </div>
+
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
                     <th>Task ID</th>
-                    <th>Project</th>
                     <th>Stage</th>
                     <th>Status</th>
                     <th>Build</th>
@@ -112,23 +113,13 @@
             </div>
           </article>
 
-          <article class="panel">
-            <div class="panel-heading">
-              <h2>Stage Mix</h2>
-              <span id="stage-total"></span>
-            </div>
-            <div class="bars" id="stage-bars"></div>
-          </article>
-
-          <article class="panel">
-            <div class="panel-heading">
-              <h2>Needs Attention</h2>
-              <span id="attention-count"></span>
-            </div>
-            <div class="attention-list" id="attention-list"></div>
-          </article>
         </div>
       </section>
+
+      <footer class="footnote">
+        <span>Project Helix Tasks · Handshake dashboard</span>
+        <a href="https://github.com/Rhy-Shah/helix-task-dashboard" target="_blank" rel="noreferrer">GitHub</a>
+      </footer>
     </main>
 
     <script src="./app.js"></script>
