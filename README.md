@@ -6,6 +6,8 @@ and shows your **Project Helix** tasks in a clean, filterable dashboard.
 Each teammate runs it on their **own laptop** with their **own Handshake login**.
 No data leaves your machine; nothing is hosted.
 
+![Project Helix Tasks dashboard](docs/images/dashboard.png)
+
 ---
 
 ## What you need (one-time setup)
@@ -114,6 +116,14 @@ xattr -dr com.apple.quarantine ~/Library/Caches/ms-playwright
 ```
 
 Then click **Open Handshake Login** again.
+
+### macOS: login window crashes with `SIGABRT` / `Operation not permitted` / `chrome-mac-x64`
+
+You are running `npm start` from inside an IDE-sandboxed terminal (e.g. Cursor's
+built-in terminal), which uses a separate Playwright cache with the wrong CPU
+architecture. **Run `npm start` from the regular macOS Terminal app (or iTerm)
+instead** — not from an IDE-integrated terminal — so Playwright uses your real
+`~/Library/Caches/ms-playwright/` cache.
 
 ### `Error: listen EADDRINUSE: address already in use :::4173`
 
