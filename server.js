@@ -7,9 +7,12 @@ const handshakeApi = require("./handshake-api");
 
 const DEFAULT_PORT = Number(process.env.PORT || 4173);
 const SESSION_COOKIE = "hai_session";
-const DEFAULT_SESSIONS_DIR = path.join(__dirname, ".sessions");
 const WEB_DIR = path.join(__dirname, "web");
 const CONFIG_PATH = path.join(__dirname, "config.json");
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+const SESSION_IDLE_MS = 60 * 60 * 1000;
+const SESSION_SWEEP_MS = 5 * 60 * 1000;
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -26,6 +29,7 @@ function parseCookies(header = "") {
       .filter(Boolean)
       .map((part) => {
         const index = part.indexOf("=");
+        if (index === -1) return [part, ""];
         return [
           decodeURIComponent(part.slice(0, index)),
           decodeURIComponent(part.slice(index + 1)),
@@ -35,7 +39,31 @@ function parseCookies(header = "") {
 }
 
 function createSessionId() {
-  return crypto.randomUUID();
+  return crypto.randomBytes(24).toString("base64url");
+}
+
+function setSecurityHeaders(res) {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Permissions-Policy", "geolocation=(), camera=(), microphone=()");
+  res.setHeader(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data:",
+      "font-src 'self' data:",
+      "connect-src 'self'",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join("; ")
+  );
+  if (IS_PRODUCTION) {
+    res.setHeader("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
+  }
 }
 
 function sendJson(res, status, body) {
@@ -53,7 +81,7 @@ function readRequestBody(req) {
     req.on("data", (chunk) => {
       body += chunk;
 
-      if (body.length > 1_000_000) {
+      if (body.length > 200_000) {
         reject(new Error("Request body is too large."));
         req.destroy();
       }
@@ -69,54 +97,10 @@ function readRequestBody(req) {
   });
 }
 
-function ensureSession(req, res, sessionsDir) {
-  fs.mkdirSync(sessionsDir, { recursive: true });
-
-  const cookies = parseCookies(req.headers.cookie);
-  const sessionId = cookies[SESSION_COOKIE] || createSessionId();
-  const authPath = path.join(sessionsDir, `${sessionId}.json`);
-
-  if (!cookies[SESSION_COOKIE]) {
-    res.setHeader(
-      "Set-Cookie",
-      `${SESSION_COOKIE}=${encodeURIComponent(
-        sessionId
-      )}; HttpOnly; SameSite=Lax; Path=/`
-    );
-  }
-
-  return { sessionId, authPath };
-}
-
-function readAuthState(authPath) {
-  if (!fs.existsSync(authPath)) {
-    return null;
-  }
-
-  return JSON.parse(fs.readFileSync(authPath, "utf8"));
-}
-
-function getHelixProject() {
-  const fallbackUrl =
-    "https://ai.joinhandshake.com/fellow/projects/past/26a53071-8843-4138-97df-430bd3e4cd45";
-  let projectUrl = fallbackUrl;
-
-  if (fs.existsSync(CONFIG_PATH)) {
-    const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
-    projectUrl = config.projectTasksUrl || fallbackUrl;
-  }
-
-  return {
-    id: handshakeApi.normalizeProjectInput(projectUrl).projectId,
-    name: "Project Helix",
-    projectUrl,
-  };
-}
-
-function createLoginManager(sessionsDir) {
+function createLoginManager() {
   const flows = new Map();
 
-  async function start(sessionId, authPath, startUrl) {
+  async function start(sessionId, startUrl) {
     const existing = flows.get(sessionId);
 
     if (existing) {
@@ -124,14 +108,22 @@ function createLoginManager(sessionsDir) {
       flows.delete(sessionId);
     }
 
-    const { chromium } = require("playwright");
+    let chromium;
+    try {
+      ({ chromium } = require("playwright"));
+    } catch {
+      throw new Error(
+        "Browser popup login is only available when running locally with Playwright installed. Run: npm install playwright && npx playwright install chromium"
+      );
+    }
+
     const browser = await chromium.launch({ headless: false });
     const context = await browser.newContext();
     const page = await context.newPage();
     const url = startUrl || getHelixProject().projectUrl;
 
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-    flows.set(sessionId, { browser, context, authPath });
+    flows.set(sessionId, { browser, context });
 
     return { opened: true };
   }
@@ -140,15 +132,14 @@ function createLoginManager(sessionsDir) {
     const flow = flows.get(sessionId);
 
     if (!flow) {
-      throw new Error("No active Handshake login window for this session.");
+      throw new Error("No active login window. Click 'Open Handshake Login' first.");
     }
 
-    fs.mkdirSync(sessionsDir, { recursive: true });
-    await flow.context.storageState({ path: flow.authPath });
+    const storageState = await flow.context.storageState();
     await flow.browser.close().catch(() => {});
     flows.delete(sessionId);
 
-    return readAuthState(flow.authPath);
+    return storageState;
   }
 
   async function cancel(sessionId) {
@@ -161,6 +152,167 @@ function createLoginManager(sessionsDir) {
   }
 
   return { start, save, cancel };
+}
+
+function createSessionStore() {
+  const store = new Map();
+
+  function get(id) {
+    const entry = store.get(id);
+    if (!entry) return null;
+    if (Date.now() - entry.lastSeen > SESSION_IDLE_MS) {
+      store.delete(id);
+      return null;
+    }
+    entry.lastSeen = Date.now();
+    return entry;
+  }
+
+  function ensure(id) {
+    let entry = store.get(id);
+    if (!entry) {
+      entry = { authState: null, lastSeen: Date.now() };
+      store.set(id, entry);
+    } else {
+      entry.lastSeen = Date.now();
+    }
+    return entry;
+  }
+
+  function setAuth(id, authState) {
+    const entry = ensure(id);
+    entry.authState = authState;
+    entry.lastSeen = Date.now();
+  }
+
+  function clear(id) {
+    store.delete(id);
+  }
+
+  function sweep() {
+    const now = Date.now();
+    for (const [id, entry] of store) {
+      if (now - entry.lastSeen > SESSION_IDLE_MS) {
+        store.delete(id);
+      }
+    }
+  }
+
+  return { get, ensure, setAuth, clear, sweep, size: () => store.size };
+}
+
+function buildSessionCookie(sessionId) {
+  const parts = [
+    `${SESSION_COOKIE}=${encodeURIComponent(sessionId)}`,
+    "HttpOnly",
+    "SameSite=Lax",
+    "Path=/",
+  ];
+  if (IS_PRODUCTION) parts.push("Secure");
+  return parts.join("; ");
+}
+
+function buildLogoutCookie() {
+  const parts = [
+    `${SESSION_COOKIE}=`,
+    "HttpOnly",
+    "SameSite=Lax",
+    "Path=/",
+    "Max-Age=0",
+  ];
+  if (IS_PRODUCTION) parts.push("Secure");
+  return parts.join("; ");
+}
+
+function ensureSession(req, res, sessions) {
+  const cookies = parseCookies(req.headers.cookie);
+  let sessionId = cookies[SESSION_COOKIE];
+
+  if (!sessionId) {
+    sessionId = createSessionId();
+    res.setHeader("Set-Cookie", buildSessionCookie(sessionId));
+  }
+
+  sessions.ensure(sessionId);
+  return sessionId;
+}
+
+function createLoginManager() {
+  const flows = new Map();
+
+  async function start(sessionId, startUrl) {
+    const existing = flows.get(sessionId);
+
+    if (existing) {
+      await existing.browser.close().catch(() => {});
+      flows.delete(sessionId);
+    }
+
+    let chromium;
+    try {
+      ({ chromium } = require("playwright"));
+    } catch {
+      throw new Error(
+        "Playwright is not installed. Run: npm install && npx playwright install chromium"
+      );
+    }
+
+    const browser = await chromium.launch({ headless: false });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const url = startUrl || getHelixProject().projectUrl;
+
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+    flows.set(sessionId, { browser, context });
+
+    return { opened: true };
+  }
+
+  async function save(sessionId) {
+    const flow = flows.get(sessionId);
+
+    if (!flow) {
+      throw new Error("No active Handshake login window. Click Open Handshake Login first.");
+    }
+
+    const authState = await flow.context.storageState();
+    await flow.browser.close().catch(() => {});
+    flows.delete(sessionId);
+
+    return authState;
+  }
+
+  async function cancel(sessionId) {
+    const flow = flows.get(sessionId);
+
+    if (flow) {
+      await flow.browser.close().catch(() => {});
+      flows.delete(sessionId);
+    }
+  }
+
+  return { start, save, cancel };
+}
+
+function getHelixProject() {
+  const fallbackUrl =
+    "https://ai.joinhandshake.com/fellow/projects/past/26a53071-8843-4138-97df-430bd3e4cd45";
+  let projectUrl = fallbackUrl;
+
+  if (fs.existsSync(CONFIG_PATH)) {
+    try {
+      const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+      projectUrl = config.projectTasksUrl || fallbackUrl;
+    } catch {
+      projectUrl = fallbackUrl;
+    }
+  }
+
+  return {
+    id: handshakeApi.normalizeProjectInput(projectUrl).projectId,
+    name: "Project Helix",
+    projectUrl,
+  };
 }
 
 function serveStatic(req, res) {
@@ -187,30 +339,41 @@ function serveStatic(req, res) {
 }
 
 function createAppServer(options = {}) {
-  const sessionsDir = options.sessionsDir || DEFAULT_SESSIONS_DIR;
   const api = options.api || handshakeApi;
-  const loginManager = options.loginManager || createLoginManager(sessionsDir);
+  const sessions = options.sessions || createSessionStore();
+  const loginManager = options.loginManager || createLoginManager();
 
-  return http.createServer(async (req, res) => {
+  const sweepInterval = setInterval(() => {
+    sessions.sweep();
+  }, SESSION_SWEEP_MS);
+  sweepInterval.unref?.();
+
+  const server = http.createServer(async (req, res) => {
+    setSecurityHeaders(res);
     const url = new URL(req.url, "http://localhost");
-    const { sessionId, authPath } = ensureSession(req, res, sessionsDir);
+    const sessionId = ensureSession(req, res, sessions);
 
     try {
       if (req.method === "GET" && url.pathname === "/api/status") {
-        const authState = readAuthState(authPath);
+        const session = sessions.get(sessionId);
         const helixProject = getHelixProject();
 
-        if (!authState) {
+        if (!session?.authState) {
           sendJson(res, 200, { connected: false, helixProject });
           return;
         }
 
-        const profile = await api.fetchProfile(authState);
-        sendJson(res, 200, {
-          connected: true,
-          helixProject,
-          profile: { name: profile.name || profile.fullName || "Handshake user" },
-        });
+        try {
+          const profile = await api.fetchProfile(session.authState);
+          sendJson(res, 200, {
+            connected: true,
+            helixProject,
+            profile: { name: profile.name || profile.fullName || "Handshake user" },
+          });
+        } catch {
+          sessions.clear(sessionId);
+          sendJson(res, 200, { connected: false, helixProject });
+        }
         return;
       }
 
@@ -218,7 +381,6 @@ function createAppServer(options = {}) {
         const body = await readRequestBody(req);
         const result = await loginManager.start(
           sessionId,
-          authPath,
           body.startUrl || getHelixProject().projectUrl
         );
         sendJson(res, 200, result);
@@ -226,8 +388,19 @@ function createAppServer(options = {}) {
       }
 
       if (req.method === "POST" && url.pathname === "/api/connect/save") {
-        const authState = await loginManager.save(sessionId);
-        const profile = await api.fetchProfile(authState);
+        const storageState = await loginManager.save(sessionId);
+
+        let profile;
+        try {
+          profile = await api.fetchProfile(storageState);
+        } catch {
+          sendJson(res, 401, {
+            error: "Login window closed but Handshake auth failed. Try again.",
+          });
+          return;
+        }
+
+        sessions.setAuth(sessionId, storageState);
         sendJson(res, 200, {
           connected: true,
           profile: { name: profile.name || profile.fullName || "Handshake user" },
@@ -243,18 +416,17 @@ function createAppServer(options = {}) {
 
       if (req.method === "POST" && url.pathname === "/api/logout") {
         await loginManager.cancel(sessionId);
-        if (fs.existsSync(authPath)) {
-          fs.unlinkSync(authPath);
-        }
+        sessions.clear(sessionId);
+        res.setHeader("Set-Cookie", buildLogoutCookie());
         sendJson(res, 200, { connected: false });
         return;
       }
 
       if (req.method === "POST" && url.pathname === "/api/dashboard") {
-        const authState = readAuthState(authPath);
+        const session = sessions.get(sessionId);
 
-        if (!authState) {
-          sendJson(res, 401, { error: "Connect Handshake first." });
+        if (!session?.authState) {
+          sendJson(res, 401, { error: "Sign in first." });
           return;
         }
 
@@ -262,12 +434,9 @@ function createAppServer(options = {}) {
         const helixProject = getHelixProject();
         const dashboard = await api.fetchDashboardForProject(
           body.projectInput || helixProject.projectUrl,
-          authState,
+          session.authState,
           {
-            project: {
-              id: helixProject.id,
-              name: helixProject.name,
-            },
+            project: { id: helixProject.id, name: helixProject.name },
           }
         );
 
@@ -281,22 +450,32 @@ function createAppServer(options = {}) {
 
       sendJson(res, 404, { error: "Not found." });
     } catch (err) {
-      sendJson(res, 500, { error: err.message });
+      const message = err?.message || "Server error.";
+      console.error(`[${req.method} ${url.pathname}] ${message}`);
+      sendJson(res, 500, { error: message });
     }
   });
+
+  server.on("close", () => clearInterval(sweepInterval));
+  return server;
 }
 
 if (require.main === module) {
   const server = createAppServer();
 
   server.listen(DEFAULT_PORT, () => {
-    console.log(`Handshake dashboard running at http://localhost:${DEFAULT_PORT}`);
+    console.log(
+      `Project Helix Tasks running at http://localhost:${DEFAULT_PORT} (${
+        IS_PRODUCTION ? "production" : "development"
+      } mode)`
+    );
   });
 }
 
 module.exports = {
   createAppServer,
   createSessionId,
+  createSessionStore,
   getHelixProject,
   parseCookies,
 };

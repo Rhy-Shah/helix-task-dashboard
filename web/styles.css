@@ -108,26 +108,37 @@ a:hover {
 }
 
 .status-card {
-  display: flex;
+  display: grid;
+  grid-template-columns: 16px 1fr;
   gap: 12px;
-  align-items: center;
-  padding: 14px 16px;
+  align-items: start;
+  padding: 16px 18px;
+}
+
+.status-card > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.status-card strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .status-card p {
   color: var(--muted);
   font-size: 13px;
-  margin-top: 2px;
-}
-
-.status-card strong {
-  font-size: 14px;
+  line-height: 1.4;
+  margin: 0;
 }
 
 .status-dot {
   width: 10px;
   height: 10px;
-  flex: 0 0 auto;
+  margin-top: 6px;
   background: var(--amber);
   border-radius: 999px;
   box-shadow: 0 0 0 4px var(--amber-soft);
@@ -140,9 +151,28 @@ a:hover {
 
 .control-deck {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1.05fr 1fr;
+  align-items: stretch;
   gap: 16px;
   margin-bottom: 18px;
+}
+
+.control-deck .panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.control-deck .panel > .panel-title {
+  margin-bottom: 14px;
+}
+
+.control-deck .cookie-form,
+.control-deck .action-row {
+  margin-top: auto;
+}
+
+.control-deck .cookie-form .action-row {
+  margin-top: 0;
 }
 
 .panel {

@@ -106,21 +106,21 @@ function clearMessage() {
 }
 
 function setBusy(button, busyText) {
-  const original = button.innerHTML;
+  const original = button.textContent;
   button.disabled = true;
   button.textContent = busyText;
 
   return () => {
     button.disabled = false;
-    button.innerHTML = original;
+    button.textContent = original;
   };
 }
 
 function renderConnection(profile) {
   elements.connectionCard.classList.toggle("connected", state.connected);
   elements.connectionTitle.textContent = state.connected
-    ? `Connected${profile?.name ? ` as ${profile.name}` : ""}`
-    : "Not connected";
+    ? `Signed in${profile?.name ? ` as ${profile.name}` : ""}`
+    : "Not signed in";
   elements.connectionCopy.textContent = state.connected
     ? "Ready to fetch your Helix tasks."
     : "Open Handshake login to create a local session.";
@@ -137,7 +137,6 @@ function pillClass(value) {
   if (v === "passing" || v === "Delivered") return "green";
   if (/Review|Submitted/.test(v)) return "blue";
   if (/Ready/.test(v)) return "violet";
-  if (v === "None" || v === "No stage found") return "amber";
   return "amber";
 }
 
@@ -336,7 +335,7 @@ async function startLogin() {
     });
     state.loginWindowOpen = true;
     renderConnection();
-    showMessage("Handshake login window opened. Finish logging in there, then save the session here.");
+    showMessage("Handshake login window opened. Finish signing in there, then click Save Login.");
   } catch (err) {
     showMessage(err.message, "error");
   } finally {
@@ -352,7 +351,7 @@ async function saveLogin() {
     state.connected = true;
     state.loginWindowOpen = false;
     renderConnection(result.profile);
-    showMessage("Handshake session saved for this browser session.");
+    showMessage("Signed in. You can fetch tasks now.");
   } catch (err) {
     showMessage(err.message, "error");
   } finally {
@@ -366,7 +365,7 @@ async function logout() {
   state.dashboard = null;
   elements.dashboard.hidden = true;
   renderConnection();
-  showMessage("Logged out locally.");
+  showMessage("Logged out.");
 }
 
 async function fetchProject() {
