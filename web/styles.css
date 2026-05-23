@@ -563,6 +563,52 @@ td {
   white-space: nowrap;
 }
 
+.task-id-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-id-text {
+  font-family: inherit;
+}
+
+.copy-id-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+tbody tr:hover .copy-id-button {
+  opacity: 1;
+}
+
+.copy-id-button:hover {
+  background: var(--paper);
+  color: var(--brand-strong);
+  border-color: var(--line);
+}
+
+.copy-id-button.copied {
+  color: var(--green, #15803d);
+  background: var(--green-soft, #dcfce7);
+  border-color: transparent;
+  opacity: 1;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
