@@ -520,7 +520,7 @@ select:focus {
 
 table {
   width: 100%;
-  min-width: 720px;
+  min-width: 980px;
   border-collapse: collapse;
 }
 
@@ -530,6 +530,36 @@ td {
   text-align: left;
   vertical-align: middle;
   border-top: 1px solid var(--line);
+}
+
+th:nth-child(1),
+td:nth-child(1) {
+  width: 330px;
+  white-space: nowrap;
+}
+
+th:nth-child(2),
+td:nth-child(2) {
+  width: 150px;
+  white-space: nowrap;
+}
+
+th:nth-child(3),
+td:nth-child(3) {
+  width: 100px;
+  white-space: nowrap;
+}
+
+th:nth-child(4),
+td:nth-child(4) {
+  width: 120px;
+  white-space: nowrap;
+}
+
+th:nth-child(5),
+td:nth-child(5) {
+  width: auto;
+  word-break: break-word;
 }
 
 thead th {
@@ -604,10 +634,12 @@ th.sortable.sort-desc .sort-icon::after {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
 }
 
 .task-id-text {
   font-family: inherit;
+  white-space: nowrap;
 }
 
 .copy-id-button {
