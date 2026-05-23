@@ -473,10 +473,12 @@ async function saveLogin() {
     state.connected = true;
     state.loginWindowOpen = false;
     renderConnection(result.profile);
-    showMessage("Signed in. You can fetch tasks now.");
+    showMessage("Signed in. Fetching your tasks...");
+    done();
+    await fetchProject();
+    return;
   } catch (err) {
     showMessage(err.message, "error");
-  } finally {
     done();
   }
 }
