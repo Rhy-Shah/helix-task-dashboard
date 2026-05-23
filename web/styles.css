@@ -654,6 +654,7 @@ tbody tr:hover .copy-id-button {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
 .pill.green { color: var(--brand-strong); background: var(--brand-soft); }
