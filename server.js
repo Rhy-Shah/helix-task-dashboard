@@ -9,10 +9,12 @@ const DEFAULT_PORT = Number(process.env.PORT || 4173);
 const SESSION_COOKIE = "hai_session";
 const WEB_DIR = path.join(__dirname, "web");
 const CONFIG_PATH = path.join(__dirname, "config.json");
+const AUTH_PATH = path.join(__dirname, "auth.json");
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
-const SESSION_IDLE_MS = 60 * 60 * 1000;
-const SESSION_SWEEP_MS = 5 * 60 * 1000;
+const SESSION_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
+const SESSION_COOKIE_MAX_AGE = 30 * 24 * 60 * 60;
+const SESSION_SWEEP_MS = 60 * 60 * 1000;
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -40,6 +42,36 @@ function parseCookies(header = "") {
 
 function createSessionId() {
   return crypto.randomBytes(24).toString("base64url");
+}
+
+function loadAuthFromDisk() {
+  try {
+    if (!fs.existsSync(AUTH_PATH)) return null;
+    const raw = fs.readFileSync(AUTH_PATH, "utf8");
+    const parsed = JSON.parse(raw);
+    if (parsed && Array.isArray(parsed.cookies)) return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function saveAuthToDisk(authState) {
+  try {
+    fs.writeFileSync(AUTH_PATH, JSON.stringify(authState, null, 2), {
+      mode: 0o600,
+    });
+  } catch (err) {
+    console.warn(`[auth] failed to persist auth.json: ${err.message}`);
+  }
+}
+
+function deleteAuthFromDisk() {
+  try {
+    if (fs.existsSync(AUTH_PATH)) fs.unlinkSync(AUTH_PATH);
+  } catch (err) {
+    console.warn(`[auth] failed to delete auth.json: ${err.message}`);
+  }
 }
 
 function setSecurityHeaders(res) {
@@ -207,6 +239,7 @@ function buildSessionCookie(sessionId) {
     "HttpOnly",
     "SameSite=Lax",
     "Path=/",
+    `Max-Age=${SESSION_COOKIE_MAX_AGE}`,
   ];
   if (IS_PRODUCTION) parts.push("Secure");
   return parts.join("; ");
@@ -355,8 +388,16 @@ function createAppServer(options = {}) {
 
     try {
       if (req.method === "GET" && url.pathname === "/api/status") {
-        const session = sessions.get(sessionId);
+        let session = sessions.get(sessionId);
         const helixProject = getHelixProject();
+
+        if (!session?.authState) {
+          const persisted = loadAuthFromDisk();
+          if (persisted) {
+            sessions.setAuth(sessionId, persisted);
+            session = sessions.get(sessionId);
+          }
+        }
 
         if (!session?.authState) {
           sendJson(res, 200, { connected: false, helixProject });
@@ -372,6 +413,7 @@ function createAppServer(options = {}) {
           });
         } catch {
           sessions.clear(sessionId);
+          deleteAuthFromDisk();
           sendJson(res, 200, { connected: false, helixProject });
         }
         return;
@@ -401,6 +443,7 @@ function createAppServer(options = {}) {
         }
 
         sessions.setAuth(sessionId, storageState);
+        saveAuthToDisk(storageState);
         sendJson(res, 200, {
           connected: true,
           profile: { name: profile.name || profile.fullName || "Handshake user" },
@@ -417,13 +460,22 @@ function createAppServer(options = {}) {
       if (req.method === "POST" && url.pathname === "/api/logout") {
         await loginManager.cancel(sessionId);
         sessions.clear(sessionId);
+        deleteAuthFromDisk();
         res.setHeader("Set-Cookie", buildLogoutCookie());
         sendJson(res, 200, { connected: false });
         return;
       }
 
       if (req.method === "POST" && url.pathname === "/api/dashboard") {
-        const session = sessions.get(sessionId);
+        let session = sessions.get(sessionId);
+
+        if (!session?.authState) {
+          const persisted = loadAuthFromDisk();
+          if (persisted) {
+            sessions.setAuth(sessionId, persisted);
+            session = sessions.get(sessionId);
+          }
+        }
 
         if (!session?.authState) {
           sendJson(res, 401, { error: "Sign in first." });
@@ -432,15 +484,26 @@ function createAppServer(options = {}) {
 
         const body = await readRequestBody(req);
         const helixProject = getHelixProject();
-        const dashboard = await api.fetchDashboardForProject(
-          body.projectInput || helixProject.projectUrl,
-          session.authState,
-          {
-            project: { id: helixProject.id, name: helixProject.name },
-          }
-        );
 
-        sendJson(res, 200, dashboard);
+        try {
+          const dashboard = await api.fetchDashboardForProject(
+            body.projectInput || helixProject.projectUrl,
+            session.authState,
+            {
+              project: { id: helixProject.id, name: helixProject.name },
+            }
+          );
+
+          sendJson(res, 200, dashboard);
+        } catch (err) {
+          if (/expired|401|403/i.test(err.message)) {
+            sessions.clear(sessionId);
+            deleteAuthFromDisk();
+            sendJson(res, 401, { error: "Handshake session expired. Sign in again." });
+            return;
+          }
+          throw err;
+        }
         return;
       }
 

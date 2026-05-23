@@ -62,7 +62,12 @@
             <p class="eyebrow">Live dashboard</p>
             <h2 id="dashboard-title">Project Helix Tasks</h2>
           </div>
-          <p id="generated-at"></p>
+          <div class="dashboard-meta">
+            <p id="generated-at"></p>
+            <button class="chip" id="refresh-button" title="Refresh tasks">
+              <span aria-hidden="true">↻</span> Refresh
+            </button>
+          </div>
         </div>
 
         <div class="summary-grid" id="summary-grid"></div>
@@ -85,6 +90,14 @@
               <label>
                 <span>Build</span>
                 <select id="build-filter"></select>
+              </label>
+              <label>
+                <span>Updated from</span>
+                <input id="date-from-input" type="date" />
+              </label>
+              <label>
+                <span>Updated to</span>
+                <input id="date-to-input" type="date" />
               </label>
             </div>
 
