@@ -346,14 +346,15 @@ function renderSortIndicators() {
 
 function handleSortClick(column) {
   if (state.sort.column === column) {
-    if (state.sort.direction === "asc") state.sort.direction = "desc";
-    else {
+    if (state.sort.direction === "asc") {
+      state.sort.direction = "desc";
+    } else {
       state.sort.column = null;
       state.sort.direction = "asc";
     }
   } else {
     state.sort.column = column;
-    state.sort.direction = column === "updatedAt" ? "desc" : "asc";
+    state.sort.direction = "asc";
   }
   renderSortIndicators();
   renderTable();
