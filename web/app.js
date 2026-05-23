@@ -158,7 +158,7 @@ function renderSummary() {
 
   const filterKeys = ["delivered_ready", "internal_audit", "pass_at", "other"];
   const cards = [
-    { key: "all", label: "Total tasks", sub: "click to clear filter", value: total, accent: "violet" },
+    { key: "all", label: "Total tasks", sub: "click to clear category", value: total, accent: "violet" },
     ...filterKeys.map((key) => ({
       key,
       label: QUICK_FILTERS[key].label,
@@ -187,13 +187,27 @@ function renderSummary() {
   elements.summaryGrid.querySelectorAll(".metric-button").forEach((node) => {
     node.addEventListener("click", () => {
       const key = node.dataset.quick;
-      setQuickFilter(key === "all" ? null : key);
+      if (key === "all") {
+        state.quickFilter = null;
+        renderTable();
+        renderSummary();
+        updateClearFilterButton();
+      } else {
+        setQuickFilter(key);
+      }
     });
   });
 }
 
 function setQuickFilter(key) {
-  state.quickFilter = key;
+  state.quickFilter = state.quickFilter === key ? null : key;
+  renderTable();
+  renderSummary();
+  updateClearFilterButton();
+}
+
+function clearAllFilters() {
+  state.quickFilter = null;
   elements.searchInput.value = "";
   elements.stageFilter.value = "all";
   elements.buildFilter.value = "all";
@@ -492,7 +506,7 @@ if (elements.refreshButton) {
 elements.copyVisibleButton.addEventListener("click", () =>
   copyTaskIds("filtered", filteredTasks(), elements.copyVisibleButton)
 );
-elements.clearFiltersButton.addEventListener("click", () => setQuickFilter(null));
+elements.clearFiltersButton.addEventListener("click", clearAllFilters);
 [
   elements.searchInput,
   elements.stageFilter,
@@ -501,10 +515,6 @@ elements.clearFiltersButton.addEventListener("click", () => setQuickFilter(null)
   elements.dateToInput,
 ].forEach((control) => {
   const onChange = () => {
-    if (state.quickFilter) {
-      state.quickFilter = null;
-      renderSummary();
-    }
     renderTable();
     updateClearFilterButton();
   };
