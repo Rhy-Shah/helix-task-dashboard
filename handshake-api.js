@@ -45,18 +45,44 @@ async function fetchTrpc(procedure, input, storageState, options = {}) {
     throw new Error("Handshake session is not connected.");
   }
 
-  const response = await (options.fetch || fetch)(url, {
-    headers: {
-      Accept: "application/json, text/plain, */*",
-      Cookie: cookieHeader,
-      Referer: options.referer || DEFAULT_REFERER,
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/147.0.0.0 Safari/537.36",
-    },
-  });
+  const fetchImpl = options.fetch || fetch;
+  const maxAttempts = options.maxAttempts ?? 3;
+  const retryDelayMs = options.retryDelayMs ?? 600;
+  const sleep = options.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
+
+  let response;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    response = await fetchImpl(url, {
+      headers: {
+        Accept: "application/json, text/plain, */*",
+        Cookie: cookieHeader,
+        Referer: options.referer || DEFAULT_REFERER,
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/147.0.0.0 Safari/537.36",
+      },
+    });
+
+    const transient =
+      response.status === 502 ||
+      response.status === 503 ||
+      response.status === 504;
+
+    if (transient && attempt < maxAttempts) {
+      await sleep(retryDelayMs * attempt);
+      continue;
+    }
+    break;
+  }
 
   if (response.status === 401 || response.status === 403) {
     throw new Error("Handshake login expired. Connect again.");
+  }
+
+  if (response.status >= 502 && response.status <= 504) {
+    throw new Error(
+      `Handshake is temporarily unavailable (${response.status}). Try again in a moment.`
+    );
   }
 
   if (!response.ok) {
