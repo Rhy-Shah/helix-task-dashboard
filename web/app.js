@@ -331,7 +331,18 @@ function renderTable() {
     .map(
       (task) => `
         <tr>
-          <td class="mono">${escapeHtml(task.id)}</td>
+          <td class="mono">
+            <span class="task-id-cell">
+              <span class="task-id-text">${escapeHtml(task.id)}</span>
+              <button
+                type="button"
+                class="copy-id-button"
+                data-task-id="${escapeHtml(task.id)}"
+                title="Copy task ID"
+                aria-label="Copy task ID ${escapeHtml(task.id)}"
+              >⧉</button>
+            </span>
+          </td>
           <td><span class="pill ${pillClass(task.stage)}">${escapeHtml(task.stage)}</span></td>
           <td><span class="pill ${pillClass(task.buildStatus || "None")}">${escapeHtml(
             task.buildStatus || "None"
@@ -506,6 +517,25 @@ if (elements.refreshButton) {
 elements.copyVisibleButton.addEventListener("click", () =>
   copyTaskIds("filtered", filteredTasks(), elements.copyVisibleButton)
 );
+elements.taskTable.addEventListener("click", async (event) => {
+  const button = event.target.closest(".copy-id-button");
+  if (!button) return;
+  const id = button.dataset.taskId;
+  if (!id) return;
+
+  try {
+    await writeClipboard(id);
+    const original = button.textContent;
+    button.classList.add("copied");
+    button.textContent = "✓";
+    setTimeout(() => {
+      button.classList.remove("copied");
+      button.textContent = original;
+    }, 1200);
+  } catch {
+    showMessage("Could not copy task ID.", "error");
+  }
+});
 elements.clearFiltersButton.addEventListener("click", clearAllFilters);
 [
   elements.searchInput,
