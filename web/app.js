@@ -4,6 +4,7 @@ const state = {
   helixProject: null,
   loginWindowOpen: false,
   quickFilter: null,
+  sort: { column: null, direction: "asc" },
 };
 
 const PRIMARY_STAGES = new Set([
@@ -306,8 +307,60 @@ function filteredTasks() {
   });
 }
 
+function compareValues(a, b, column) {
+  const av = a?.[column];
+  const bv = b?.[column];
+
+  const aMissing = av === null || av === undefined || av === "";
+  const bMissing = bv === null || bv === undefined || bv === "";
+  if (aMissing && bMissing) return 0;
+  if (aMissing) return 1;
+  if (bMissing) return -1;
+
+  if (column === "updatedAt") {
+    return new Date(av).getTime() - new Date(bv).getTime();
+  }
+
+  return String(av).localeCompare(String(bv), undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function sortedTasks(tasks) {
+  const { column, direction } = state.sort;
+  if (!column) return tasks;
+
+  const factor = direction === "desc" ? -1 : 1;
+  return [...tasks].sort((a, b) => compareValues(a, b, column) * factor);
+}
+
+function renderSortIndicators() {
+  document.querySelectorAll("th.sortable").forEach((th) => {
+    th.classList.remove("sort-asc", "sort-desc");
+    if (state.sort.column && th.dataset.sort === state.sort.column) {
+      th.classList.add(state.sort.direction === "desc" ? "sort-desc" : "sort-asc");
+    }
+  });
+}
+
+function handleSortClick(column) {
+  if (state.sort.column === column) {
+    if (state.sort.direction === "asc") state.sort.direction = "desc";
+    else {
+      state.sort.column = null;
+      state.sort.direction = "asc";
+    }
+  } else {
+    state.sort.column = column;
+    state.sort.direction = column === "updatedAt" ? "desc" : "asc";
+  }
+  renderSortIndicators();
+  renderTable();
+}
+
 function renderTable() {
-  const tasks = filteredTasks();
+  const tasks = sortedTasks(filteredTasks());
   const total = state.dashboard?.tasks?.length || 0;
 
   elements.resultCount.textContent =
@@ -377,6 +430,7 @@ function renderDashboard() {
   state.quickFilter = null;
   renderSummary();
   renderFilters();
+  renderSortIndicators();
   renderTable();
   updateClearFilterButton();
 }
@@ -517,6 +571,10 @@ if (elements.refreshButton) {
 elements.copyVisibleButton.addEventListener("click", () =>
   copyTaskIds("filtered", filteredTasks(), elements.copyVisibleButton)
 );
+document.querySelectorAll("th.sortable").forEach((th) => {
+  th.addEventListener("click", () => handleSortClick(th.dataset.sort));
+});
+
 elements.taskTable.addEventListener("click", async (event) => {
   const button = event.target.closest(".copy-id-button");
   if (!button) return;

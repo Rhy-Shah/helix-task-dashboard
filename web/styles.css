@@ -563,6 +563,43 @@ td {
   white-space: nowrap;
 }
 
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+th.sortable:hover {
+  color: var(--ink);
+  background: var(--paper);
+}
+
+th.sortable .sort-icon {
+  display: inline-block;
+  width: 10px;
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  vertical-align: middle;
+}
+
+th.sortable .sort-icon::after {
+  content: "⇅";
+  opacity: 0.45;
+}
+
+th.sortable.sort-asc .sort-icon::after {
+  content: "▲";
+  opacity: 1;
+  color: var(--brand-strong);
+}
+
+th.sortable.sort-desc .sort-icon::after {
+  content: "▼";
+  opacity: 1;
+  color: var(--brand-strong);
+}
+
 .task-id-cell {
   display: inline-flex;
   align-items: center;
