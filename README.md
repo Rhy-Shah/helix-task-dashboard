@@ -62,7 +62,7 @@ Open **<http://localhost:4173>** in your browser.
 
 The app has two steps:
 
-### Step 1 — Sign in to Handshake
+### Step 1 — Sign in to Handshake (one time)
 
 1. Click **Open Handshake Login**.
    A new Chromium window opens on the Handshake page.
@@ -70,7 +70,9 @@ The app has two steps:
    Wait until you see the Project Helix tasks page in that window.
 3. Come back to **<http://localhost:4173>** and click **Save Login**.
 
-That stores your session **in memory only** (it's gone when you stop the server).
+Your session is saved locally in `auth.json` (gitignored, file permissions
+`600`) and reused next time. **You do not need to sign in again until you click
+Log Out** or Handshake itself invalidates the session.
 
 ### Step 2 — Load your tasks
 
@@ -81,9 +83,13 @@ You can:
 - Click the **Total / Delivered & Ready / Internal Audit / Pass@ / Other** cards
   to filter the table.
 - Use the **search, stage, and build** filters for finer slicing.
+- Use the **Updated from / Updated to** date pickers to filter by when a task
+  last changed stage.
+- Click **↻ Refresh** at the top of the dashboard any time to re-pull the
+  latest tasks (no sign-in needed).
 - Click **Copy Filtered IDs** to copy every visible task ID to your clipboard
   (one per line, ready to paste into a spreadsheet).
-- Click **Log Out** to wipe your session.
+- Click **Log Out** to wipe your saved session (`auth.json` is deleted).
 
 ---
 
@@ -96,7 +102,8 @@ cd helix-task-dashboard
 npm start
 ```
 
-Then open <http://localhost:4173>. Sign in once per session.
+Then open <http://localhost:4173>. The dashboard loads automatically because
+your session is still saved — no sign-in step.
 
 To stop the app: press `Ctrl + C` in the terminal.
 
@@ -165,14 +172,16 @@ Then open <http://localhost:5050>.
 
 ## What is and isn't stored
 
-| Thing                   | Where                                | Lifetime                            |
-| ----------------------- | ------------------------------------ | ----------------------------------- |
-| Your Handshake session  | In server memory (RAM only)          | Until you stop the server or log out |
-| Task data               | In server memory (RAM only)          | Until you refresh / restart         |
-| Project ID & URL        | `config.json` (gitignored, optional) | Persistent                          |
-| Anything on your laptop | Nowhere else                         | —                                   |
+| Thing                  | Where                                        | Lifetime                                                    |
+| ---------------------- | -------------------------------------------- | ----------------------------------------------------------- |
+| Your Handshake session | `auth.json` next to `server.js` (mode `600`) | Until you click **Log Out** or Handshake expires the cookies |
+| Task data              | In server memory (RAM only)                  | Until you refresh / restart the server                      |
+| Browser session cookie | Local cookie `hai_session` (HttpOnly, 30 d)  | 30 days, cleared on Log Out                                 |
+| Project ID & URL       | `config.json` (gitignored, optional)         | Persistent                                                  |
+| Sent anywhere else     | Nowhere — calls only go to `ai.joinhandshake.com` from your laptop | —                                |
 
-There is no database, no cloud sync, no cookies sent anywhere except directly to
+`auth.json` and `config.json` are both gitignored. There is no database, no
+cloud sync, and no cookies sent anywhere except directly to
 `ai.joinhandshake.com` from your machine.
 
 ---
