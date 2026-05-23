@@ -58,10 +58,13 @@ const elements = {
   dashboard: document.querySelector("#dashboard"),
   dashboardTitle: document.querySelector("#dashboard-title"),
   generatedAt: document.querySelector("#generated-at"),
+  refreshButton: document.querySelector("#refresh-button"),
   summaryGrid: document.querySelector("#summary-grid"),
   searchInput: document.querySelector("#search-input"),
   stageFilter: document.querySelector("#stage-filter"),
   buildFilter: document.querySelector("#build-filter"),
+  dateFromInput: document.querySelector("#date-from-input"),
+  dateToInput: document.querySelector("#date-to-input"),
   resultCount: document.querySelector("#result-count"),
   copyVisibleButton: document.querySelector("#copy-visible-button"),
   copyCount: document.querySelector("#copy-count"),
@@ -194,6 +197,8 @@ function setQuickFilter(key) {
   elements.searchInput.value = "";
   elements.stageFilter.value = "all";
   elements.buildFilter.value = "all";
+  elements.dateFromInput.value = "";
+  elements.dateToInput.value = "";
   renderTable();
   renderSummary();
   updateClearFilterButton();
@@ -204,7 +209,9 @@ function hasActiveFilter() {
     state.quickFilter ||
     elements.searchInput.value.trim() ||
     elements.stageFilter.value !== "all" ||
-    elements.buildFilter.value !== "all"
+    elements.buildFilter.value !== "all" ||
+    elements.dateFromInput.value ||
+    elements.dateToInput.value
   );
 }
 
@@ -237,12 +244,20 @@ function renderFilters() {
   }
 }
 
+function parseDateInput(value, endOfDay = false) {
+  if (!value) return null;
+  const date = new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function filteredTasks() {
   const tasks = state.dashboard?.tasks || [];
   const query = elements.searchInput.value.trim().toLowerCase();
   const stage = elements.stageFilter.value;
   const build = elements.buildFilter.value;
   const quick = state.quickFilter ? QUICK_FILTERS[state.quickFilter] : null;
+  const dateFrom = parseDateInput(elements.dateFromInput.value);
+  const dateTo = parseDateInput(elements.dateToInput.value, true);
 
   return tasks.filter((task) => {
     const buildStatus = task.buildStatus || "None";
@@ -256,11 +271,23 @@ function filteredTasks() {
       .join(" ")
       .toLowerCase();
 
+    let dateMatch = true;
+    if (dateFrom || dateTo) {
+      const taskDate = task.updatedAt ? new Date(task.updatedAt) : null;
+      if (!taskDate || Number.isNaN(taskDate.getTime())) {
+        dateMatch = false;
+      } else {
+        if (dateFrom && taskDate < dateFrom) dateMatch = false;
+        if (dateTo && taskDate > dateTo) dateMatch = false;
+      }
+    }
+
     return (
       (!query || searchable.includes(query)) &&
       (stage === "all" || task.stage === stage) &&
       (build === "all" || buildStatus === build) &&
-      (!quick || quick.test(task))
+      (!quick || quick.test(task)) &&
+      dateMatch
     );
   });
 }
@@ -329,11 +356,15 @@ function renderDashboard() {
   updateClearFilterButton();
 }
 
-async function loadStatus() {
+async function loadStatus({ autoFetch = false } = {}) {
   const status = await request("/api/status");
   state.connected = status.connected;
   state.helixProject = status.helixProject;
   renderConnection(status.profile);
+
+  if (autoFetch && status.connected) {
+    fetchProject({ silent: true }).catch(() => {});
+  }
 }
 
 async function startLogin() {
@@ -380,8 +411,16 @@ async function logout() {
   showMessage("Logged out.");
 }
 
-async function fetchProject() {
-  const done = setBusy(elements.fetchProjectButton, "Fetching...");
+async function fetchProject({ silent = false } = {}) {
+  const button = elements.fetchProjectButton;
+  const refreshButton = elements.refreshButton;
+  const restoreFetch = setBusy(button, "Fetching...");
+  const previousRefreshLabel = refreshButton ? refreshButton.innerHTML : null;
+
+  if (refreshButton) {
+    refreshButton.disabled = true;
+    refreshButton.innerHTML = '<span aria-hidden="true">↻</span> Refreshing...';
+  }
 
   try {
     const data = await request("/api/dashboard", {
@@ -390,11 +429,16 @@ async function fetchProject() {
     });
     state.dashboard = data;
     renderDashboard();
-    showMessage(`Fetched ${data.tasks.length} tasks.`);
+    if (!silent) showMessage(`Fetched ${data.tasks.length} tasks.`);
+    else clearMessage();
   } catch (err) {
     showMessage(err.message, "error");
   } finally {
-    done();
+    restoreFetch();
+    if (refreshButton && previousRefreshLabel !== null) {
+      refreshButton.disabled = false;
+      refreshButton.innerHTML = previousRefreshLabel;
+    }
   }
 }
 
@@ -441,28 +485,31 @@ async function copyTaskIds(label, tasks, button) {
 elements.connectButton.addEventListener("click", startLogin);
 elements.saveLoginButton.addEventListener("click", saveLogin);
 elements.logoutButton.addEventListener("click", logout);
-elements.fetchProjectButton.addEventListener("click", fetchProject);
+elements.fetchProjectButton.addEventListener("click", () => fetchProject());
+if (elements.refreshButton) {
+  elements.refreshButton.addEventListener("click", () => fetchProject());
+}
 elements.copyVisibleButton.addEventListener("click", () =>
   copyTaskIds("filtered", filteredTasks(), elements.copyVisibleButton)
 );
 elements.clearFiltersButton.addEventListener("click", () => setQuickFilter(null));
-[elements.searchInput, elements.stageFilter, elements.buildFilter].forEach((control) => {
-  control.addEventListener("input", () => {
+[
+  elements.searchInput,
+  elements.stageFilter,
+  elements.buildFilter,
+  elements.dateFromInput,
+  elements.dateToInput,
+].forEach((control) => {
+  const onChange = () => {
     if (state.quickFilter) {
       state.quickFilter = null;
       renderSummary();
     }
     renderTable();
     updateClearFilterButton();
-  });
-  control.addEventListener("change", () => {
-    if (state.quickFilter) {
-      state.quickFilter = null;
-      renderSummary();
-    }
-    renderTable();
-    updateClearFilterButton();
-  });
+  };
+  control.addEventListener("input", onChange);
+  control.addEventListener("change", onChange);
 });
 
-loadStatus().catch((err) => showMessage(err.message, "error"));
+loadStatus({ autoFetch: true }).catch((err) => showMessage(err.message, "error"));

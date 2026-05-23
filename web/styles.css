@@ -360,6 +360,12 @@ select:focus {
   letter-spacing: -0.01em;
 }
 
+.dashboard-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 #generated-at {
   color: var(--muted);
   font-size: 13px;
