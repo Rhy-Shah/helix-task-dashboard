@@ -6,11 +6,7 @@ and shows your **Project Helix** tasks in a clean, filterable dashboard.
 Each teammate runs it on their **own laptop** with their **own Handshake login**.
 No data leaves your machine; nothing is hosted.
 
-**Sign-in screen** — what you see when you first open the app:
-
-![Sign-in screen](docs/images/dashboard.png)
-
-**After fetching tasks** — the live dashboard with filters and one-click ID copy:
+what you see when you first open the app: the live dashboard with filters and one-click ID copy:
 
 ![Live dashboard with tasks](docs/images/dashboard-loaded.png)
 
