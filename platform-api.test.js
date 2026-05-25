@@ -2,13 +2,12 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
-  buildDashboardPayload,
   buildTrpcUrl,
   normalizeProjectInput,
-  normalizeProjectList,
+  normalizeTask,
 } = require("./platform-api");
 
-test("normalizeProjectInput accepts project IDs and Handshake project URLs", () => {
+test("normalizeProjectInput accepts project IDs and project URLs", () => {
   assert.deepEqual(
     normalizeProjectInput("26a53071-8843-4138-97df-430bd3e4cd45"),
     {
@@ -43,57 +42,24 @@ test("buildTrpcUrl encodes batched tRPC input", () => {
   });
 });
 
-test("normalizeProjectList merges active and past projects", () => {
-  assert.deepEqual(
-    normalizeProjectList(
-      [{ id: "active-1", name: "Active", status: "active" }],
-      [{ id: "past-1", name: "Past", status: "paused" }]
-    ),
-    [
-      { id: "active-1", name: "Active", status: "active", source: "current" },
-      { id: "past-1", name: "Past", status: "paused", source: "past" },
-    ]
-  );
-});
-
-test("buildDashboardPayload creates task summaries with project context", () => {
-  const payload = buildDashboardPayload({
-    project: { id: "project-1", name: "Project One" },
-    tasks: [
-      {
-        id: "task-1",
-        pipelineStage: { name: "Internal Audit" },
-        buildStatus: "failing",
-        data: { task_title: "Fix a thing" },
-      },
-    ],
-  });
-
-  assert.equal(payload.summary.total, 1);
-  assert.equal(payload.summary.failingCount, 1);
-  assert.deepEqual(payload.tasks[0], {
-    id: "task-1",
-    projectId: "project-1",
-    projectName: "Project One",
-    stage: "Internal Audit",
-    status: null,
-    buildStatus: "failing",
-    title: "Fix a thing",
-    updatedAt: null,
-  });
-});
-
-test("normalizeTask extracts updatedAt from common shapes", () => {
-  const { normalizeTask } = require("./platform-api");
-
+test("normalizeTask extracts stage, title, and updatedAt", () => {
   const task = normalizeTask(
     {
       id: "t-1",
       pipelineStage: { name: "Delivered", enteredAt: "2026-05-22T10:00:00Z" },
-      data: { task_title: "Hi" },
+      buildStatus: "passing",
+      data: { task_title: "Finish thing" },
     },
-    { id: "p-1", name: "P" }
+    { id: "p-1", name: "Project H" }
   );
 
-  assert.equal(task.updatedAt, "2026-05-22T10:00:00Z");
+  assert.deepEqual(task, {
+    id: "t-1",
+    projectId: "p-1",
+    projectName: "Project H",
+    stage: "Delivered",
+    buildStatus: "passing",
+    title: "Finish thing",
+    updatedAt: "2026-05-22T10:00:00Z",
+  });
 });

@@ -15,6 +15,7 @@ const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const SESSION_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
 const SESSION_COOKIE_MAX_AGE = 30 * 24 * 60 * 60;
 const SESSION_SWEEP_MS = 60 * 60 * 1000;
+
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -47,10 +48,8 @@ function createSessionId() {
 function loadAuthFromDisk() {
   try {
     if (!fs.existsSync(AUTH_PATH)) return null;
-    const raw = fs.readFileSync(AUTH_PATH, "utf8");
-    const parsed = JSON.parse(raw);
-    if (parsed && Array.isArray(parsed.cookies)) return parsed;
-    return null;
+    const parsed = JSON.parse(fs.readFileSync(AUTH_PATH, "utf8"));
+    return parsed && Array.isArray(parsed.cookies) ? parsed : null;
   } catch {
     return null;
   }
@@ -109,10 +108,8 @@ function sendJson(res, status, body) {
 function readRequestBody(req) {
   return new Promise((resolve, reject) => {
     let body = "";
-
     req.on("data", (chunk) => {
       body += chunk;
-
       if (body.length > 200_000) {
         reject(new Error("Request body is too large."));
         req.destroy();
@@ -127,63 +124,6 @@ function readRequestBody(req) {
     });
     req.on("error", reject);
   });
-}
-
-function createLoginManager() {
-  const flows = new Map();
-
-  async function start(sessionId, startUrl) {
-    const existing = flows.get(sessionId);
-
-    if (existing) {
-      await existing.browser.close().catch(() => {});
-      flows.delete(sessionId);
-    }
-
-    let chromium;
-    try {
-      ({ chromium } = require("playwright"));
-    } catch {
-      throw new Error(
-        "Browser popup login is only available when running locally with Playwright installed. Run: npm install playwright && npx playwright install chromium"
-      );
-    }
-
-    const browser = await chromium.launch({ headless: false });
-    const context = await browser.newContext();
-    const page = await context.newPage();
-    const url = startUrl || getHelixProject().projectUrl;
-
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-    flows.set(sessionId, { browser, context });
-
-    return { opened: true };
-  }
-
-  async function save(sessionId) {
-    const flow = flows.get(sessionId);
-
-    if (!flow) {
-      throw new Error("No active login window. Click 'Open Login' first.");
-    }
-
-    const storageState = await flow.context.storageState();
-    await flow.browser.close().catch(() => {});
-    flows.delete(sessionId);
-
-    return storageState;
-  }
-
-  async function cancel(sessionId) {
-    const flow = flows.get(sessionId);
-
-    if (flow) {
-      await flow.browser.close().catch(() => {});
-      flows.delete(sessionId);
-    }
-  }
-
-  return { start, save, cancel };
 }
 
 function createSessionStore() {
@@ -224,9 +164,7 @@ function createSessionStore() {
   function sweep() {
     const now = Date.now();
     for (const [id, entry] of store) {
-      if (now - entry.lastSeen > SESSION_IDLE_MS) {
-        store.delete(id);
-      }
+      if (now - entry.lastSeen > SESSION_IDLE_MS) store.delete(id);
     }
   }
 
@@ -260,71 +198,12 @@ function buildLogoutCookie() {
 function ensureSession(req, res, sessions) {
   const cookies = parseCookies(req.headers.cookie);
   let sessionId = cookies[SESSION_COOKIE];
-
   if (!sessionId) {
     sessionId = createSessionId();
     res.setHeader("Set-Cookie", buildSessionCookie(sessionId));
   }
-
   sessions.ensure(sessionId);
   return sessionId;
-}
-
-function createLoginManager() {
-  const flows = new Map();
-
-  async function start(sessionId, startUrl) {
-    const existing = flows.get(sessionId);
-
-    if (existing) {
-      await existing.browser.close().catch(() => {});
-      flows.delete(sessionId);
-    }
-
-    let chromium;
-    try {
-      ({ chromium } = require("playwright"));
-    } catch {
-      throw new Error(
-        "Playwright is not installed. Run: npm install && npx playwright install chromium"
-      );
-    }
-
-    const browser = await chromium.launch({ headless: false });
-    const context = await browser.newContext();
-    const page = await context.newPage();
-    const url = startUrl || getHelixProject().projectUrl;
-
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-    flows.set(sessionId, { browser, context });
-
-    return { opened: true };
-  }
-
-  async function save(sessionId) {
-    const flow = flows.get(sessionId);
-
-    if (!flow) {
-      throw new Error("No active login window. Click Open Login first.");
-    }
-
-    const authState = await flow.context.storageState();
-    await flow.browser.close().catch(() => {});
-    flows.delete(sessionId);
-
-    return authState;
-  }
-
-  async function cancel(sessionId) {
-    const flow = flows.get(sessionId);
-
-    if (flow) {
-      await flow.browser.close().catch(() => {});
-      flows.delete(sessionId);
-    }
-  }
-
-  return { start, save, cancel };
 }
 
 function getHelixProject() {
@@ -348,6 +227,134 @@ function getHelixProject() {
   };
 }
 
+function createLoginManager(options = {}) {
+  const flows = new Map();
+  const api = options.api || handshakeApi;
+
+  async function start(sessionId, startUrl, onAuthCaptured) {
+    await cancel(sessionId);
+
+    let chromium;
+    try {
+      ({ chromium } = require("playwright"));
+    } catch {
+      throw new Error(
+        "Playwright is not installed. Run: npm install && npx playwright install chromium"
+      );
+    }
+
+    const browser = await chromium.launch({ headless: false });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const targetUrl = startUrl || getHelixProject().projectUrl;
+    const targetOrigin = new URL(targetUrl).origin;
+
+    // Manual Save Login coexists with auto-capture; both paths read the same
+    // `flow.captured` flag and detach the same framenavigated handler.
+    const flow = {
+      browser,
+      context,
+      page,
+      pollHandle: null,
+      onFrameNavigated: null,
+      captured: false,
+      capturedState: null,
+    };
+    let inFlight = false;
+
+    async function tryCapture() {
+      if (flow.captured || inFlight) return;
+      inFlight = true;
+      try {
+        const currentUrl = page.url();
+        if (!currentUrl.startsWith(targetOrigin)) return;
+
+        // The session cookie is set on the unauthenticated login page too,
+        // so verify by actually hitting the API.
+        const authState = await context.storageState();
+        try {
+          await api.fetchProfile(authState);
+        } catch {
+          return;
+        }
+
+        flow.captured = true;
+        flow.capturedState = authState;
+        if (flow.pollHandle) clearInterval(flow.pollHandle);
+        if (flow.onFrameNavigated) {
+          page.off("framenavigated", flow.onFrameNavigated);
+          flow.onFrameNavigated = null;
+        }
+        try {
+          onAuthCaptured?.(authState);
+        } catch (err) {
+          console.warn(`[login] onAuthCaptured failed: ${err.message}`);
+        }
+        await browser.close().catch(() => {});
+        flows.delete(sessionId);
+      } catch {
+        // browser or page closed mid-check
+      } finally {
+        inFlight = false;
+      }
+    }
+
+    flow.onFrameNavigated = (frame) => {
+      if (frame === page.mainFrame()) tryCapture();
+    };
+    page.on("framenavigated", flow.onFrameNavigated);
+    browser.on("disconnected", () => {
+      if (flow.pollHandle) clearInterval(flow.pollHandle);
+      flows.delete(sessionId);
+    });
+
+    await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+
+    flow.pollHandle = setInterval(tryCapture, 2000);
+    flows.set(sessionId, flow);
+
+    return { opened: true };
+  }
+
+  async function cancel(sessionId) {
+    const flow = flows.get(sessionId);
+    if (!flow) return;
+    if (flow.pollHandle) clearInterval(flow.pollHandle);
+    if (flow.onFrameNavigated) {
+      flow.page.off("framenavigated", flow.onFrameNavigated);
+      flow.onFrameNavigated = null;
+    }
+    await flow.browser.close().catch(() => {});
+    flows.delete(sessionId);
+  }
+
+  async function save(sessionId) {
+    const flow = flows.get(sessionId);
+    if (!flow) {
+      throw new Error("No active login window. Click Login first.");
+    }
+    if (flow.captured) {
+      return flow.capturedState;
+    }
+    flow.captured = true;
+    if (flow.pollHandle) {
+      clearInterval(flow.pollHandle);
+      flow.pollHandle = null;
+    }
+    if (flow.onFrameNavigated) {
+      flow.page.off("framenavigated", flow.onFrameNavigated);
+      flow.onFrameNavigated = null;
+    }
+    const authState = await flow.context.storageState();
+    flow.capturedState = authState;
+    await flow.browser.close().catch(() => {});
+    flows.delete(sessionId);
+    return authState;
+  }
+
+  return { start, cancel, save };
+}
+
 function serveStatic(req, res) {
   const requestedPath = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
   const relativePath = requestedPath === "/" ? "index.html" : requestedPath.slice(1);
@@ -364,11 +371,22 @@ function serveStatic(req, res) {
   }
 
   res.writeHead(200, {
-    "Content-Type":
-      MIME_TYPES[path.extname(filePath)] || "application/octet-stream",
+    "Content-Type": MIME_TYPES[path.extname(filePath)] || "application/octet-stream",
   });
   fs.createReadStream(filePath).pipe(res);
   return true;
+}
+
+function loadSession(sessions, sessionId) {
+  let session = sessions.get(sessionId);
+  if (!session?.authState) {
+    const persisted = loadAuthFromDisk();
+    if (persisted) {
+      sessions.setAuth(sessionId, persisted);
+      session = sessions.get(sessionId);
+    }
+  }
+  return session;
 }
 
 function createAppServer(options = {}) {
@@ -376,9 +394,7 @@ function createAppServer(options = {}) {
   const sessions = options.sessions || createSessionStore();
   const loginManager = options.loginManager || createLoginManager();
 
-  const sweepInterval = setInterval(() => {
-    sessions.sweep();
-  }, SESSION_SWEEP_MS);
+  const sweepInterval = setInterval(() => sessions.sweep(), SESSION_SWEEP_MS);
   sweepInterval.unref?.();
 
   const server = http.createServer(async (req, res) => {
@@ -388,21 +404,11 @@ function createAppServer(options = {}) {
 
     try {
       if (req.method === "GET" && url.pathname === "/api/status") {
-        let session = sessions.get(sessionId);
-
-        if (!session?.authState) {
-          const persisted = loadAuthFromDisk();
-          if (persisted) {
-            sessions.setAuth(sessionId, persisted);
-            session = sessions.get(sessionId);
-          }
-        }
-
+        const session = loadSession(sessions, sessionId);
         if (!session?.authState) {
           sendJson(res, 200, { connected: false });
           return;
         }
-
         try {
           const profile = await api.fetchProfile(session.authState);
           sendJson(res, 200, {
@@ -422,7 +428,11 @@ function createAppServer(options = {}) {
         const body = await readRequestBody(req);
         const result = await loginManager.start(
           sessionId,
-          body.startUrl || getHelixProject().projectUrl
+          body.startUrl || getHelixProject().projectUrl,
+          (authState) => {
+            sessions.setAuth(sessionId, authState);
+            saveAuthToDisk(authState);
+          }
         );
         sendJson(res, 200, result);
         return;
@@ -430,7 +440,6 @@ function createAppServer(options = {}) {
 
       if (req.method === "POST" && url.pathname === "/api/connect/save") {
         const storageState = await loginManager.save(sessionId);
-
         let profile;
         try {
           profile = await api.fetchProfile(storageState);
@@ -440,19 +449,12 @@ function createAppServer(options = {}) {
           });
           return;
         }
-
         sessions.setAuth(sessionId, storageState);
         saveAuthToDisk(storageState);
         sendJson(res, 200, {
           connected: true,
           profile: { name: profile.name || profile.fullName || "User" },
         });
-        return;
-      }
-
-      if (req.method === "POST" && url.pathname === "/api/connect/cancel") {
-        await loginManager.cancel(sessionId);
-        sendJson(res, 200, { cancelled: true });
         return;
       }
 
@@ -466,16 +468,7 @@ function createAppServer(options = {}) {
       }
 
       if (req.method === "POST" && url.pathname === "/api/dashboard") {
-        let session = sessions.get(sessionId);
-
-        if (!session?.authState) {
-          const persisted = loadAuthFromDisk();
-          if (persisted) {
-            sessions.setAuth(sessionId, persisted);
-            session = sessions.get(sessionId);
-          }
-        }
-
+        const session = loadSession(sessions, sessionId);
         if (!session?.authState) {
           sendJson(res, 401, { error: "Sign in first." });
           return;
@@ -488,11 +481,8 @@ function createAppServer(options = {}) {
           const dashboard = await api.fetchDashboardForProject(
             body.projectInput || helixProject.projectUrl,
             session.authState,
-            {
-              project: { id: helixProject.id, name: helixProject.name },
-            }
+            { project: { id: helixProject.id, name: helixProject.name } }
           );
-
           sendJson(res, 200, dashboard);
         } catch (err) {
           if (/expired|401|403/i.test(err.message)) {
@@ -506,9 +496,7 @@ function createAppServer(options = {}) {
         return;
       }
 
-      if (req.method === "GET" && serveStatic(req, res)) {
-        return;
-      }
+      if (req.method === "GET" && serveStatic(req, res)) return;
 
       sendJson(res, 404, { error: "Not found." });
     } catch (err) {
@@ -524,7 +512,6 @@ function createAppServer(options = {}) {
 
 if (require.main === module) {
   const server = createAppServer();
-
   server.listen(DEFAULT_PORT, () => {
     console.log(
       `Server running at http://localhost:${DEFAULT_PORT} (${

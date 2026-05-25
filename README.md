@@ -1,208 +1,46 @@
-# Project H Tasks
+# Tasks Dashboard
 
-A small local web app that signs you into your project platform (in a real
-browser window) and shows your tasks in a clean, filterable dashboard.
+A local dashboard for your project tasks. Runs entirely on your machine — nothing is hosted.
 
-Each teammate runs it on their **own laptop** with their **own login**.
-No data leaves your machine; nothing is hosted.
+## Setup
 
----
-
-## What you need (one-time setup)
-
-1. **Node.js 18 or newer**
-   - Check: `node -v`
-   - Install from [nodejs.org](https://nodejs.org) if you don't have it.
-
-2. **Git** (to clone the repo)
-   - Check: `git --version`
-
-That's it. macOS, Windows, and Linux all work.
-
----
-
-## First-time setup
-
-Open a terminal and run these four commands, one at a time:
+You only need to do this once.
 
 ```bash
-# 1. Clone the repo
 git clone <REPO_URL>
 cd <repo-folder>
-
-# 2. Install Node dependencies
 npm install
-
-# 3. Install the browser used for the login window
 npx playwright install chromium
-
-# 4. Start the local web app
-npm start
 ```
 
-You should see:
-
-```
-Server running at http://localhost:4173 (development mode)
-```
-
-Open **<http://localhost:4173>** in your browser.
-
----
-
-## Using the dashboard
-
-The app has two steps:
-
-### Step 1 — Sign in (one time)
-
-1. Click the **Open Login** button.
-   A new Chromium window opens on the platform's login page.
-2. Sign in normally (SSO / Duo / whatever your school requires).
-   Wait until you see your project tasks page in that window.
-3. Come back to **<http://localhost:4173>** and click **Save Login**.
-
-Your session is saved locally in `auth.json` (gitignored, file permissions
-`600`) and reused next time. **You do not need to sign in again until you click
-Log Out** or the platform itself invalidates the session.
-
-### Step 2 — Load your tasks
-
-Click **Fetch Tasks**. The dashboard fills in.
-
-You can:
-
-- Click the **Total / Delivered & Ready / Pass@ / Internal Audit / Misc** cards
-  to filter the table.
-- Use the **search, stage, and build** filters for finer slicing.
-- Use the **Updated from / Updated to** date pickers to filter by when a task
-  last changed stage.
-- Click any column header to **sort** (ascending / descending / off).
-- Click **↻ Refresh** at the top of the dashboard any time to re-pull the
-  latest tasks (no sign-in needed).
-- Click the small **⧉** icon next to any task ID to copy that single ID.
-- Click **Copy Filtered IDs** to copy every visible task ID to your clipboard
-  (one per line, ready to paste into a spreadsheet).
-- Click **Log Out** to wipe your saved session (`auth.json` is deleted).
-
----
-
-## Daily use
-
-After the one-time setup, you only need:
+## Run it
 
 ```bash
-cd <repo-folder>
 npm start
 ```
 
-Then open <http://localhost:4173>. The dashboard loads automatically because
-your session is still saved — no sign-in step.
+Open <http://localhost:4173> and click **Login**.
 
-To stop the app: press `Ctrl + C` in the terminal.
+A browser window opens. Sign in normally (SSO / Duo / whatever your school uses). Once you land on your project tasks page the window closes by itself, your session is saved locally to `auth.json`, and the dashboard loads automatically. If the window doesn't close on its own, click **Save Login** to capture the session manually.
 
----
+> You'll see project details (name, tasks, stages) only after you sign in — and only if you're on **Project H**. Anyone else will get an empty / unauthorized response.
+
+Daily use is just `npm start`. Your saved session is reused; no sign-in needed until you click **Log Out**.
 
 ## Troubleshooting
 
-### "Playwright is not installed" or `Executable doesn't exist`
+| Problem | Fix |
+| --- | --- |
+| `Executable doesn't exist` | `npx playwright install chromium` |
+| Login window flashes and closes (macOS) | `xattr -dr com.apple.quarantine ~/Library/Caches/ms-playwright` |
+| Login window crashes with `SIGABRT` / `chrome-mac-x64` | Run `npm start` from the real macOS Terminal, not an IDE-integrated terminal |
+| `EADDRINUSE :::4173` | `pkill -f "node server.js"` then `npm start` |
+| Port 4173 is taken by something else | `PORT=5050 npm start` |
 
-Run:
+## What gets stored
 
-```bash
-npm install
-npx playwright install chromium
-```
-
-### macOS: the login window flashes and closes immediately
-
-macOS Gatekeeper has quarantined the Chromium binary. Clear it once:
-
-```bash
-xattr -dr com.apple.quarantine ~/Library/Caches/ms-playwright
-```
-
-Then click **Open Login** again.
-
-### macOS: login window crashes with `SIGABRT` / `Operation not permitted` / `chrome-mac-x64`
-
-You are running `npm start` from inside an IDE-sandboxed terminal (e.g. Cursor's
-built-in terminal), which uses a separate Playwright cache with the wrong CPU
-architecture. **Run `npm start` from the regular macOS Terminal app (or iTerm)
-instead** — not from an IDE-integrated terminal — so Playwright uses your real
-`~/Library/Caches/ms-playwright/` cache.
-
-### `Error: listen EADDRINUSE: address already in use :::4173`
-
-Another copy of the server is still running. Stop it:
-
-```bash
-# macOS / Linux
-pkill -f "node server.js"
-
-# Windows (PowerShell)
-Get-Process node | Where-Object { $_.CommandLine -like "*server.js*" } | Stop-Process
-```
-
-Then `npm start` again.
-
-### "Sign in first." after clicking Save Login
-
-The login window probably closed before you finished signing in. Click
-**Open Login** again, complete the sign-in fully (until you see your project
-tasks page), then click **Save Login**.
-
-### Port 4173 is taken by something else
-
-Set a custom port:
-
-```bash
-PORT=5050 npm start
-```
-
-Then open <http://localhost:5050>.
-
----
-
-## What is and isn't stored
-
-| Thing                  | Where                                        | Lifetime                                                    |
-| ---------------------- | -------------------------------------------- | ----------------------------------------------------------- |
-| Your platform session  | `auth.json` next to `server.js` (mode `600`) | Until you click **Log Out** or the platform expires the cookies |
-| Task data              | In server memory (RAM only)                  | Until you refresh / restart the server                      |
-| Browser session cookie | Local cookie `hai_session` (HttpOnly, 30 d)  | 30 days, cleared on Log Out                                 |
-| Project ID & URL       | `config.json` (gitignored, optional)         | Persistent                                                  |
-| Sent anywhere else     | Nowhere — calls only go to the platform from your laptop | —                                              |
-
-`auth.json` and `config.json` are both gitignored. There is no database, no
-cloud sync, and no cookies sent anywhere except directly to the platform from
-your machine.
-
----
-
-## Optional: change which project gets loaded
-
-To point the dashboard at a different project, create a `config.json` next to
-`server.js`:
-
-```json
-{
-  "projectTasksUrl": "https://your-platform.example/path/to/your/project"
-}
-```
-
-`config.json` is gitignored.
-
----
-
-## Project layout (for the curious)
-
-```
-server.js           Local Node.js HTTP server
-platform-api.js     Calls the platform's API using your session cookies
-dashboard-core.js   Pure helpers (summary, filtering)
-web/                Static frontend (HTML / CSS / JS — no framework)
-scripts/            One-off CLI scripts
-```
-
-Tests: `npm test`.
+| Thing | Where | Lifetime |
+| --- | --- | --- |
+| Session cookies | `auth.json` (gitignored, mode 600) | Until you click Log Out |
+| Session id cookie | Browser cookie (HttpOnly, SameSite=Lax) | 30 days |
+| Anything else | Nowhere | — |

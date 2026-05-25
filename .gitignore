@@ -1,12 +1,3 @@
 auth.json
 config.json
-ids.json
-stages.json
-all-ids.json
-all-stages.json
-extra-ids.json
-missing-given-ids.json
-task-ids.txt
-dashboard/data.js
 node_modules/
-.sessions/

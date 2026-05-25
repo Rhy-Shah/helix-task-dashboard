@@ -10,103 +10,75 @@
     <main class="app-shell">
       <header class="masthead">
         <div class="masthead-copy">
-          <p class="eyebrow" id="masthead-eyebrow">Dashboard</p>
           <h1 id="masthead-title">Tasks Dashboard</h1>
-          <p class="subtitle">Track every task, stage, and build in one place.</p>
+          <p class="subtitle" id="masthead-subtitle">Open the login window and finish signing in. Your session is saved automatically — your tasks load on their own.</p>
         </div>
-        <div class="status-card" id="connection-card">
-          <span class="status-dot"></span>
-          <div>
-            <strong id="connection-title">Checking session</strong>
-            <p id="connection-copy">Looking for a saved login.</p>
-          </div>
-        </div>
-      </header>
-
-      <section class="control-deck">
-        <article class="panel">
-          <div class="panel-title">
-            <span class="step-num">1</span>
-            <div>
-              <h2 id="signin-heading">Sign in</h2>
-              <p id="signin-copy">Open the login window, finish signing in, then save your session.</p>
+        <div class="masthead-side">
+          <div class="status-card" id="connection-card">
+            <span class="status-dot"></span>
+            <strong id="connection-title" class="status-text">Checking session</strong>
+            <div class="status-actions">
+              <button class="primary" id="connect-button">Login</button>
+              <button class="ghost" id="save-login-button">Save Login</button>
+              <button class="ghost" id="logout-button">Log Out</button>
             </div>
           </div>
-          <div class="action-row">
-            <button class="primary" id="connect-button">Open Login</button>
-            <button id="save-login-button" disabled>Save Login</button>
-            <button class="ghost" id="logout-button">Log Out</button>
-          </div>
-        </article>
-
-        <article class="panel">
-          <div class="panel-title">
-            <span class="step-num">2</span>
-            <div>
-              <h2>Load tasks</h2>
-              <p id="load-copy">Pull the latest tasks from your account.</p>
-            </div>
-          </div>
-          <div class="action-row">
-            <button class="primary" id="fetch-project-button">Fetch Tasks</button>
-          </div>
-        </article>
-      </section>
-
-      <section class="message" id="message" hidden></section>
-
-      <section class="dashboard" id="dashboard" hidden>
-        <div class="dashboard-heading">
-          <div>
-            <p class="eyebrow">Live dashboard</p>
-            <h2 id="dashboard-title">Tasks</h2>
-          </div>
-          <div class="dashboard-meta">
-            <p id="generated-at"></p>
-            <button class="chip" id="refresh-button" title="Refresh tasks">
+          <div class="masthead-meta" id="masthead-meta" hidden>
+            <span class="meta-pill">
+              <span class="meta-dot" aria-hidden="true"></span>
+              <span id="generated-at"></span>
+            </span>
+            <button class="refresh-chip" id="refresh-button" title="Refresh tasks">
               <span aria-hidden="true">↻</span> Refresh
             </button>
           </div>
         </div>
+      </header>
 
+      <section class="message" id="message" hidden></section>
+
+      <section class="loading-state" id="loading-state" hidden>
+        <span class="loading-dot"></span>
+        <span class="loading-text">Loading your tasks…</span>
+      </section>
+
+      <section class="dashboard" id="dashboard" hidden>
         <div class="summary-grid" id="summary-grid"></div>
 
         <div class="dashboard-grid">
           <article class="panel span-2">
-            <div class="panel-heading">
-              <h2>Tasks</h2>
-              <span id="result-count" class="muted">0 tasks</span>
-            </div>
-            <div class="toolbar">
-              <label>
-                <span>Search</span>
-                <input id="search-input" type="search" placeholder="Task ID, stage, title..." />
-              </label>
-              <label>
-                <span>Stage</span>
-                <select id="stage-filter"></select>
-              </label>
-              <label>
-                <span>Build</span>
-                <select id="build-filter"></select>
-              </label>
-              <label>
-                <span>Updated from</span>
-                <input id="date-from-input" type="date" />
-              </label>
-              <label>
-                <span>Updated to</span>
-                <input id="date-to-input" type="date" />
-              </label>
-            </div>
-
-            <div class="copy-bar">
+            <div class="filter-bar">
+              <span id="result-count" class="result-count">0 tasks</span>
+              <input
+                id="search-input"
+                class="filter-input filter-search"
+                type="search"
+                placeholder="Search task ID, stage, title…"
+              />
+              <select id="stage-filter" class="filter-input"></select>
+              <select id="build-filter" class="filter-input"></select>
+              <input
+                id="date-from-input"
+                class="filter-input filter-date"
+                type="date"
+                aria-label="Updated from"
+                title="Updated from"
+              />
+              <input
+                id="date-to-input"
+                class="filter-input filter-date"
+                type="date"
+                aria-label="Updated to"
+                title="Updated to"
+              />
+              <button class="chip clear-chip" id="clear-filters-button" hidden>
+                Clear filters
+              </button>
               <button class="primary copy-primary" id="copy-visible-button">
                 <span class="copy-icon" aria-hidden="true">⧉</span>
                 <span class="copy-label">Copy Filtered IDs</span>
                 <span class="copy-count" id="copy-count">0</span>
               </button>
-              <button class="chip" id="clear-filters-button" hidden>Clear filters</button>
             </div>
 
             <div class="table-wrap">

@@ -1,75 +1,82 @@
 const state = {
   connected: false,
   dashboard: null,
-  helixProject: null,
   loginWindowOpen: false,
   quickFilter: null,
   sort: { column: null, direction: "asc" },
 };
-
-function isDeliveredReady(task) {
-  const s = task.stage || "";
-  return s === "Delivered" || s === "Ready to Deliver";
-}
-
-function isInternalAudit(task) {
-  const s = task.stage || "";
-  if (/clayden/i.test(s)) return false;
-  return /internal audit|review|likely rejected/i.test(s);
-}
-
-function isPassAt(task) {
-  const s = task.stage || "";
-  return s === "Pass@n" || s === "Pass@0" || s === "Submitted for Pass@";
-}
 
 const QUICK_FILTERS = {
   delivered_ready: {
     label: "Delivered & Ready",
     sub: "Delivered + Ready to Deliver",
     accent: "green",
-    test: isDeliveredReady,
+    test: (task) => {
+      const s = task.stage || "";
+      return s === "Delivered" || s === "Ready to Deliver";
+    },
   },
   internal_audit: {
     label: "Internal Audit",
     sub: "Review + Internal Audit",
     accent: "blue",
-    test: isInternalAudit,
+    test: (task) => {
+      const s = task.stage || "";
+      if (/clayden/i.test(s)) return false;
+      return /internal audit|review|likely rejected/i.test(s);
+    },
   },
   pass_at: {
     label: "Pass@",
     sub: "Pass@n + Pass@0 + Submitted",
     accent: "violet",
-    test: isPassAt,
+    test: (task) => {
+      const s = task.stage || "";
+      return s === "Pass@n" || s === "Pass@0" || s === "Submitted for Pass@";
+    },
   },
   other: {
     label: "Misc",
     sub: "Invalid + Others",
     accent: "amber",
     test: (task) =>
-      !isDeliveredReady(task) &&
-      !isInternalAudit(task) &&
-      !isPassAt(task),
+      !QUICK_FILTERS.delivered_ready.test(task) &&
+      !QUICK_FILTERS.internal_audit.test(task) &&
+      !QUICK_FILTERS.pass_at.test(task),
   },
+};
+const FILTER_ORDER = ["delivered_ready", "pass_at", "internal_audit", "other"];
+
+const BRANDING_PUBLIC = {
+  documentTitle: "Tasks Dashboard",
+  mastheadTitle: "Tasks Dashboard",
+  subtitle:
+    "Sign in to load your tasks. If the window doesn't close on its own, click Save Login. Your session is saved locally.",
+  connectButton: "Login",
+  footnote: "Tasks Dashboard",
+};
+
+const BRANDING_PRIVATE = {
+  documentTitle: "Project Helix Tasks",
+  mastheadTitle: "Project Helix Tasks",
+  subtitle: "Every Project Helix task, stage, and build in one place.",
+  connectButton: "Login",
+  footnote: "Project Helix Tasks · Handshake dashboard",
 };
 
 const elements = {
-  mastheadEyebrow: document.querySelector("#masthead-eyebrow"),
   mastheadTitle: document.querySelector("#masthead-title"),
-  signinHeading: document.querySelector("#signin-heading"),
-  signinCopy: document.querySelector("#signin-copy"),
-  loadCopy: document.querySelector("#load-copy"),
+  mastheadSubtitle: document.querySelector("#masthead-subtitle"),
   footnoteText: document.querySelector("#footnote-text"),
   connectionCard: document.querySelector("#connection-card"),
   connectionTitle: document.querySelector("#connection-title"),
-  connectionCopy: document.querySelector("#connection-copy"),
   connectButton: document.querySelector("#connect-button"),
   saveLoginButton: document.querySelector("#save-login-button"),
   logoutButton: document.querySelector("#logout-button"),
-  fetchProjectButton: document.querySelector("#fetch-project-button"),
   message: document.querySelector("#message"),
+  loadingState: document.querySelector("#loading-state"),
   dashboard: document.querySelector("#dashboard"),
-  dashboardTitle: document.querySelector("#dashboard-title"),
+  mastheadMeta: document.querySelector("#masthead-meta"),
   generatedAt: document.querySelector("#generated-at"),
   refreshButton: document.querySelector("#refresh-button"),
   summaryGrid: document.querySelector("#summary-grid"),
@@ -96,17 +103,10 @@ function escapeHtml(value) {
 async function request(path, options = {}) {
   const response = await fetch(path, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
   });
   const body = await response.json();
-
-  if (!response.ok) {
-    throw new Error(body.error || "Request failed.");
-  }
-
+  if (!response.ok) throw new Error(body.error || "Request failed.");
   return body;
 }
 
@@ -125,62 +125,45 @@ function setBusy(button, busyText) {
   const original = button.textContent;
   button.disabled = true;
   button.textContent = busyText;
-
   return () => {
     button.disabled = false;
     button.textContent = original;
   };
 }
 
-const BRANDING_PUBLIC = {
-  documentTitle: "Tasks Dashboard",
-  mastheadEyebrow: "Dashboard",
-  mastheadTitle: "Tasks Dashboard",
-  signinHeading: "Sign in",
-  signinCopy: "Open the login window, finish signing in, then save your session.",
-  loadCopy: "Pull the latest tasks from your account.",
-  fetchButton: "Fetch Tasks",
-  connectButton: "Open Login",
-  dashboardTitle: "Tasks",
-  footnote: "Tasks Dashboard",
-};
-
-const BRANDING_PRIVATE = {
-  documentTitle: "Project Helix Tasks",
-  mastheadEyebrow: "Helix dashboard",
-  mastheadTitle: "Project Helix Tasks",
-  signinHeading: "Sign in to Handshake",
-  signinCopy: "Open the Handshake login window, finish signing in, then save your session.",
-  loadCopy: "Pull the latest Project Helix tasks from your account.",
-  fetchButton: "Fetch Project Helix Tasks",
-  connectButton: "Open Handshake Login",
-  dashboardTitle: "Project Helix Tasks",
-  footnote: "Project Helix Tasks · Handshake dashboard",
-};
-
 function applyBranding(connected) {
   const b = connected ? BRANDING_PRIVATE : BRANDING_PUBLIC;
   document.title = b.documentTitle;
-  if (elements.mastheadEyebrow) elements.mastheadEyebrow.textContent = b.mastheadEyebrow;
-  if (elements.mastheadTitle) elements.mastheadTitle.textContent = b.mastheadTitle;
-  if (elements.signinHeading) elements.signinHeading.textContent = b.signinHeading;
-  if (elements.signinCopy) elements.signinCopy.textContent = b.signinCopy;
-  if (elements.loadCopy) elements.loadCopy.textContent = b.loadCopy;
-  if (elements.footnoteText) elements.footnoteText.textContent = b.footnote;
-  if (elements.fetchProjectButton) elements.fetchProjectButton.textContent = b.fetchButton;
-  if (elements.connectButton) elements.connectButton.textContent = b.connectButton;
-  if (elements.dashboardTitle) elements.dashboardTitle.textContent = b.dashboardTitle;
+  elements.mastheadTitle.textContent = b.mastheadTitle;
+  elements.mastheadSubtitle.textContent = b.subtitle;
+  elements.footnoteText.textContent = b.footnote;
+  elements.connectButton.textContent = b.connectButton;
 }
 
 function renderConnection(profile) {
   elements.connectionCard.classList.toggle("connected", state.connected);
-  elements.connectionTitle.textContent = state.connected
-    ? `Signed in${profile?.name ? ` as ${profile.name}` : ""}`
-    : "Not signed in";
-  elements.connectionCopy.textContent = state.connected
-    ? "Ready to fetch your tasks."
-    : "Open Login to create a local session.";
-  elements.saveLoginButton.disabled = !state.loginWindowOpen;
+  if (state.connected) {
+    elements.connectionTitle.textContent = `Signed in${
+      profile?.name ? ` as ${profile.name}` : ""
+    }`;
+  } else if (state.loginWindowOpen) {
+    elements.connectionTitle.textContent = "Waiting for sign-in...";
+  } else {
+    elements.connectionTitle.textContent = "Not signed in";
+  }
+  if (state.connected) {
+    elements.connectButton.hidden = true;
+    elements.saveLoginButton.hidden = true;
+    elements.logoutButton.hidden = false;
+  } else if (state.loginWindowOpen) {
+    elements.connectButton.hidden = true;
+    elements.saveLoginButton.hidden = false;
+    elements.logoutButton.hidden = true;
+  } else {
+    elements.connectButton.hidden = false;
+    elements.saveLoginButton.hidden = true;
+    elements.logoutButton.hidden = true;
+  }
   applyBranding(state.connected);
 }
 
@@ -198,18 +181,23 @@ function unique(values) {
 }
 
 function countByPredicate(predicate) {
-  const tasks = state.dashboard?.tasks || [];
-  return tasks.reduce((n, task) => (predicate(task) ? n + 1 : n), 0);
+  return (state.dashboard?.tasks || []).reduce(
+    (n, task) => (predicate(task) ? n + 1 : n),
+    0
+  );
 }
 
 function renderSummary() {
-  const summary = state.dashboard.summary || {};
-  const total = summary.total || 0;
-
-  const filterKeys = ["delivered_ready", "pass_at", "internal_audit", "other"];
+  const total = state.dashboard?.summary?.total || 0;
   const cards = [
-    { key: "all", label: "Total tasks", sub: "Click to clear category", value: total, accent: "violet" },
-    ...filterKeys.map((key) => ({
+    {
+      key: "all",
+      label: "Total tasks",
+      sub: "Click to clear category",
+      value: total,
+      accent: "violet",
+    },
+    ...FILTER_ORDER.map((key) => ({
       key,
       label: QUICK_FILTERS[key].label,
       sub: QUICK_FILTERS[key].sub,
@@ -284,7 +272,7 @@ function updateClearFilterButton() {
 }
 
 function renderFilters() {
-  const tasks = state.dashboard.tasks || [];
+  const tasks = state.dashboard?.tasks || [];
   const stages = unique(tasks.map((task) => task.stage || "No stage found"));
   const builds = unique(tasks.map((task) => task.buildStatus || "None"));
 
@@ -293,11 +281,15 @@ function renderFilters() {
 
   elements.stageFilter.innerHTML = [
     '<option value="all">All stages</option>',
-    ...stages.map((stage) => `<option value="${escapeHtml(stage)}">${escapeHtml(stage)}</option>`),
+    ...stages.map(
+      (stage) => `<option value="${escapeHtml(stage)}">${escapeHtml(stage)}</option>`
+    ),
   ].join("");
   elements.buildFilter.innerHTML = [
     '<option value="all">All builds</option>',
-    ...builds.map((build) => `<option value="${escapeHtml(build)}">${escapeHtml(build)}</option>`),
+    ...builds.map(
+      (build) => `<option value="${escapeHtml(build)}">${escapeHtml(build)}</option>`
+    ),
   ].join("");
 
   if (prevStage && [...elements.stageFilter.options].some((o) => o.value === prevStage)) {
@@ -310,7 +302,9 @@ function renderFilters() {
 
 function parseDateInput(value, endOfDay = false) {
   if (!value) return null;
-  const date = new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}`);
+  const date = new Date(
+    `${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}`
+  );
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -325,13 +319,7 @@ function filteredTasks() {
 
   return tasks.filter((task) => {
     const buildStatus = task.buildStatus || "None";
-    const searchable = [
-      task.id,
-      task.projectName,
-      task.stage,
-      buildStatus,
-      task.title || "",
-    ]
+    const searchable = [task.id, task.projectName, task.stage, buildStatus, task.title || ""]
       .join(" ")
       .toLowerCase();
 
@@ -359,17 +347,14 @@ function filteredTasks() {
 function compareValues(a, b, column) {
   const av = a?.[column];
   const bv = b?.[column];
-
   const aMissing = av === null || av === undefined || av === "";
   const bMissing = bv === null || bv === undefined || bv === "";
   if (aMissing && bMissing) return 0;
   if (aMissing) return 1;
   if (bMissing) return -1;
-
   if (column === "updatedAt") {
     return new Date(av).getTime() - new Date(bv).getTime();
   }
-
   return String(av).localeCompare(String(bv), undefined, {
     numeric: true,
     sensitivity: "base",
@@ -379,7 +364,6 @@ function compareValues(a, b, column) {
 function sortedTasks(tasks) {
   const { column, direction } = state.sort;
   if (!column) return tasks;
-
   const factor = direction === "desc" ? -1 : 1;
   return [...tasks].sort((a, b) => compareValues(a, b, column) * factor);
 }
@@ -409,6 +393,17 @@ function handleSortClick(column) {
   renderTable();
 }
 
+function formatDate(value) {
+  if (!value) return "—";
+  const date = typeof value === "number" ? new Date(value) : new Date(String(value));
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function renderTable() {
   const tasks = sortedTasks(filteredTasks());
   const total = state.dashboard?.tasks?.length || 0;
@@ -417,7 +412,6 @@ function renderTable() {
     tasks.length === total
       ? `${tasks.length} tasks`
       : `${tasks.length} of ${total} tasks`;
-
   elements.copyCount.textContent = tasks.length;
   elements.copyVisibleButton.disabled = tasks.length === 0;
 
@@ -460,22 +454,9 @@ function renderTable() {
     .join("");
 }
 
-function formatDate(value) {
-  if (!value) return "—";
-  const date = typeof value === "number" ? new Date(value) : new Date(String(value));
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
 function renderDashboard() {
   elements.dashboard.hidden = false;
-  elements.dashboardTitle.textContent = state.connected
-    ? BRANDING_PRIVATE.dashboardTitle
-    : BRANDING_PUBLIC.dashboardTitle;
+  if (elements.mastheadMeta) elements.mastheadMeta.hidden = false;
   elements.generatedAt.textContent = `Updated ${new Date(
     state.dashboard.generatedAt
   ).toLocaleString()}`;
@@ -490,26 +471,63 @@ function renderDashboard() {
 async function loadStatus({ autoFetch = false } = {}) {
   const status = await request("/api/status");
   state.connected = status.connected;
-  state.helixProject = status.helixProject;
   renderConnection(status.profile);
-
   if (autoFetch && status.connected) {
-    fetchProject({ silent: true }).catch(() => {});
+    try {
+      await fetchProject({ silent: true });
+    } catch (err) {
+      showMessage(err.message || "Could not load tasks.", "error");
+    }
   }
+}
+
+let loginPollHandle = null;
+
+function stopLoginPoll() {
+  if (loginPollHandle) {
+    clearInterval(loginPollHandle);
+    loginPollHandle = null;
+  }
+}
+
+function startLoginPoll() {
+  stopLoginPoll();
+  let attempts = 0;
+  const maxAttempts = 600; // ~20 minutes at 2s
+  loginPollHandle = setInterval(async () => {
+    attempts += 1;
+    try {
+      const status = await request("/api/status");
+      if (status.connected) {
+        stopLoginPoll();
+        state.connected = true;
+        state.loginWindowOpen = false;
+        renderConnection(status.profile);
+        clearMessage();
+        await fetchProject({ silent: true });
+        return;
+      }
+    } catch {
+      // ignore transient polling errors
+    }
+    if (attempts >= maxAttempts) {
+      stopLoginPoll();
+      state.loginWindowOpen = false;
+      renderConnection();
+      showMessage("Login window timed out. Click Login to try again.", "error");
+    }
+  }, 2000);
 }
 
 async function startLogin() {
   const done = setBusy(elements.connectButton, "Opening...");
   clearMessage();
-
   try {
-    await request("/api/connect/start", {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
+    await request("/api/connect/start", { method: "POST", body: JSON.stringify({}) });
     state.loginWindowOpen = true;
     renderConnection();
-    showMessage("Login window opened. Finish signing in there, then click Save Login.");
+    showMessage("Login window opened. Finish signing in there — your session saves automatically.");
+    startLoginPoll();
   } catch (err) {
     showMessage(err.message, "error");
   } finally {
@@ -519,37 +537,46 @@ async function startLogin() {
 
 async function saveLogin() {
   const done = setBusy(elements.saveLoginButton, "Saving...");
-
+  clearMessage();
   try {
-    const result = await request("/api/connect/save", { method: "POST" });
+    const result = await request("/api/connect/save", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    stopLoginPoll();
     state.connected = true;
     state.loginWindowOpen = false;
     renderConnection(result.profile);
-    showMessage("Signed in. Fetching your tasks...");
-    done();
-    await fetchProject();
-    return;
+    clearMessage();
+    await fetchProject({ silent: true });
   } catch (err) {
     showMessage(err.message, "error");
+  } finally {
     done();
   }
 }
 
 async function logout() {
+  stopLoginPoll();
   await request("/api/logout", { method: "POST" });
   state.connected = false;
+  state.loginWindowOpen = false;
   state.dashboard = null;
   elements.dashboard.hidden = true;
+  if (elements.mastheadMeta) elements.mastheadMeta.hidden = true;
+  if (elements.loadingState) elements.loadingState.hidden = true;
   renderConnection();
   showMessage("Logged out.");
 }
 
 async function fetchProject({ silent = false } = {}) {
-  const button = elements.fetchProjectButton;
   const refreshButton = elements.refreshButton;
-  const restoreFetch = setBusy(button, "Fetching...");
-  const previousRefreshLabel = refreshButton ? refreshButton.innerHTML : null;
+  const previousLabel = refreshButton?.innerHTML ?? null;
+  const firstLoad = !state.dashboard;
 
+  if (firstLoad && elements.loadingState) {
+    elements.loadingState.hidden = false;
+  }
   if (refreshButton) {
     refreshButton.disabled = true;
     refreshButton.innerHTML = '<span aria-hidden="true">↻</span> Refreshing...';
@@ -558,19 +585,17 @@ async function fetchProject({ silent = false } = {}) {
   try {
     const data = await request("/api/dashboard", {
       method: "POST",
-      body: JSON.stringify({ mode: "project" }),
+      body: JSON.stringify({}),
     });
     state.dashboard = data;
     renderDashboard();
     if (!silent) showMessage(`Fetched ${data.tasks.length} tasks.`);
     else clearMessage();
-  } catch (err) {
-    showMessage(err.message, "error");
   } finally {
-    restoreFetch();
-    if (refreshButton && previousRefreshLabel !== null) {
+    if (elements.loadingState) elements.loadingState.hidden = true;
+    if (refreshButton && previousLabel !== null) {
       refreshButton.disabled = false;
-      refreshButton.innerHTML = previousRefreshLabel;
+      refreshButton.innerHTML = previousLabel;
     }
   }
 }
@@ -580,7 +605,6 @@ async function writeClipboard(text) {
     await navigator.clipboard.writeText(text);
     return;
   }
-
   const textarea = document.createElement("textarea");
   textarea.value = text;
   textarea.setAttribute("readonly", "");
@@ -592,39 +616,36 @@ async function writeClipboard(text) {
   document.body.removeChild(textarea);
 }
 
-function flashCopySuccess(button, originalLabel) {
+async function copyFilteredIds(button) {
+  const ids = filteredTasks().map((task) => task.id);
+  if (ids.length === 0) {
+    showMessage("No filtered task IDs to copy.", "error");
+    return;
+  }
+  await writeClipboard(ids.join("\n"));
+  showMessage(
+    `Copied ${ids.length} task ID${ids.length === 1 ? "" : "s"} to clipboard.`
+  );
   const labelEl = button.querySelector(".copy-label");
   if (labelEl) {
     labelEl.textContent = "Copied!";
     setTimeout(() => {
-      labelEl.textContent = originalLabel;
+      labelEl.textContent = "Copy Filtered IDs";
     }, 1400);
   }
-}
-
-async function copyTaskIds(label, tasks, button) {
-  const ids = tasks.map((task) => task.id);
-
-  if (ids.length === 0) {
-    showMessage(`No ${label} task IDs to copy.`, "error");
-    return;
-  }
-
-  await writeClipboard(ids.join("\n"));
-  showMessage(`Copied ${ids.length} ${label} task ID${ids.length === 1 ? "" : "s"} to clipboard.`);
-  if (button) flashCopySuccess(button, "Copy Filtered IDs");
 }
 
 elements.connectButton.addEventListener("click", startLogin);
 elements.saveLoginButton.addEventListener("click", saveLogin);
 elements.logoutButton.addEventListener("click", logout);
-elements.fetchProjectButton.addEventListener("click", () => fetchProject());
-if (elements.refreshButton) {
-  elements.refreshButton.addEventListener("click", () => fetchProject());
-}
-elements.copyVisibleButton.addEventListener("click", () =>
-  copyTaskIds("filtered", filteredTasks(), elements.copyVisibleButton)
+elements.refreshButton?.addEventListener("click", () =>
+  fetchProject().catch((err) => showMessage(err.message, "error"))
 );
+elements.copyVisibleButton.addEventListener("click", () =>
+  copyFilteredIds(elements.copyVisibleButton)
+);
+elements.clearFiltersButton.addEventListener("click", clearAllFilters);
+
 document.querySelectorAll("th.sortable").forEach((th) => {
   th.addEventListener("click", () => handleSortClick(th.dataset.sort));
 });
@@ -634,7 +655,6 @@ elements.taskTable.addEventListener("click", async (event) => {
   if (!button) return;
   const id = button.dataset.taskId;
   if (!id) return;
-
   try {
     await writeClipboard(id);
     const original = button.textContent;
@@ -648,7 +668,7 @@ elements.taskTable.addEventListener("click", async (event) => {
     showMessage("Could not copy task ID.", "error");
   }
 });
-elements.clearFiltersButton.addEventListener("click", clearAllFilters);
+
 [
   elements.searchInput,
   elements.stageFilter,
