@@ -1,9 +1,9 @@
 # Project H Tasks
 
-A small local web app that signs you into Handshake (in a real browser window)
-and shows your project tasks in a clean, filterable dashboard.
+A small local web app that signs you into your project platform (in a real
+browser window) and shows your tasks in a clean, filterable dashboard.
 
-Each teammate runs it on their **own laptop** with their **own Handshake login**.
+Each teammate runs it on their **own laptop** with their **own login**.
 No data leaves your machine; nothing is hosted.
 
 ---
@@ -33,7 +33,7 @@ cd <repo-folder>
 # 2. Install Node dependencies
 npm install
 
-# 3. Install the browser used for the Handshake login window
+# 3. Install the browser used for the login window
 npx playwright install chromium
 
 # 4. Start the local web app
@@ -54,17 +54,17 @@ Open **<http://localhost:4173>** in your browser.
 
 The app has two steps:
 
-### Step 1 — Sign in to Handshake (one time)
+### Step 1 — Sign in (one time)
 
-1. Click **Open Handshake Login**.
-   A new Chromium window opens on the Handshake page.
+1. Click the **Open Login** button.
+   A new Chromium window opens on the platform's login page.
 2. Sign in normally (SSO / Duo / whatever your school requires).
    Wait until you see your project tasks page in that window.
 3. Come back to **<http://localhost:4173>** and click **Save Login**.
 
 Your session is saved locally in `auth.json` (gitignored, file permissions
 `600`) and reused next time. **You do not need to sign in again until you click
-Log Out** or Handshake itself invalidates the session.
+Log Out** or the platform itself invalidates the session.
 
 ### Step 2 — Load your tasks
 
@@ -122,7 +122,7 @@ macOS Gatekeeper has quarantined the Chromium binary. Clear it once:
 xattr -dr com.apple.quarantine ~/Library/Caches/ms-playwright
 ```
 
-Then click **Open Handshake Login** again.
+Then click **Open Login** again.
 
 ### macOS: login window crashes with `SIGABRT` / `Operation not permitted` / `chrome-mac-x64`
 
@@ -149,8 +149,8 @@ Then `npm start` again.
 ### "Sign in first." after clicking Save Login
 
 The login window probably closed before you finished signing in. Click
-**Open Handshake Login** again, complete the sign-in fully (until you see your
-project tasks page), then click **Save Login**.
+**Open Login** again, complete the sign-in fully (until you see your project
+tasks page), then click **Save Login**.
 
 ### Port 4173 is taken by something else
 
@@ -168,26 +168,26 @@ Then open <http://localhost:5050>.
 
 | Thing                  | Where                                        | Lifetime                                                    |
 | ---------------------- | -------------------------------------------- | ----------------------------------------------------------- |
-| Your Handshake session | `auth.json` next to `server.js` (mode `600`) | Until you click **Log Out** or Handshake expires the cookies |
+| Your platform session  | `auth.json` next to `server.js` (mode `600`) | Until you click **Log Out** or the platform expires the cookies |
 | Task data              | In server memory (RAM only)                  | Until you refresh / restart the server                      |
 | Browser session cookie | Local cookie `hai_session` (HttpOnly, 30 d)  | 30 days, cleared on Log Out                                 |
 | Project ID & URL       | `config.json` (gitignored, optional)         | Persistent                                                  |
-| Sent anywhere else     | Nowhere — calls only go to `ai.joinhandshake.com` from your laptop | —                                |
+| Sent anywhere else     | Nowhere — calls only go to the platform from your laptop | —                                              |
 
 `auth.json` and `config.json` are both gitignored. There is no database, no
-cloud sync, and no cookies sent anywhere except directly to
-`ai.joinhandshake.com` from your machine.
+cloud sync, and no cookies sent anywhere except directly to the platform from
+your machine.
 
 ---
 
 ## Optional: change which project gets loaded
 
-To point the dashboard at a different Handshake project, create a `config.json`
-next to `server.js`:
+To point the dashboard at a different project, create a `config.json` next to
+`server.js`:
 
 ```json
 {
-  "projectTasksUrl": "https://ai.joinhandshake.com/fellow/projects/past/YOUR_PROJECT_ID"
+  "projectTasksUrl": "https://your-platform.example/path/to/your/project"
 }
 ```
 
@@ -199,7 +199,7 @@ next to `server.js`:
 
 ```
 server.js           Local Node.js HTTP server
-handshake-api.js    Calls Handshake's API using your session cookies
+platform-api.js     Calls the platform's API using your session cookies
 dashboard-core.js   Pure helpers (summary, filtering)
 web/                Static frontend (HTML / CSS / JS — no framework)
 scripts/            One-off CLI scripts
