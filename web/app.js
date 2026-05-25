@@ -54,6 +54,12 @@ const QUICK_FILTERS = {
 };
 
 const elements = {
+  mastheadEyebrow: document.querySelector("#masthead-eyebrow"),
+  mastheadTitle: document.querySelector("#masthead-title"),
+  signinHeading: document.querySelector("#signin-heading"),
+  signinCopy: document.querySelector("#signin-copy"),
+  loadCopy: document.querySelector("#load-copy"),
+  footnoteText: document.querySelector("#footnote-text"),
   connectionCard: document.querySelector("#connection-card"),
   connectionTitle: document.querySelector("#connection-title"),
   connectionCopy: document.querySelector("#connection-copy"),
@@ -127,19 +133,61 @@ function setBusy(button, busyText) {
   };
 }
 
+const BRANDING_PUBLIC = {
+  documentTitle: "Tasks Dashboard",
+  mastheadEyebrow: "Dashboard",
+  mastheadTitle: "Tasks Dashboard",
+  signinHeading: "Sign in",
+  signinCopy: "Open the login window, finish signing in, then save your session.",
+  loadCopy: "Pull the latest tasks from your account.",
+  fetchButton: "Fetch Tasks",
+  connectButton: "Open Login",
+  dashboardTitle: "Tasks",
+  footnote: "Tasks Dashboard",
+};
+
+const BRANDING_PRIVATE = {
+  documentTitle: "Project Helix Tasks",
+  mastheadEyebrow: "Helix dashboard",
+  mastheadTitle: "Project Helix Tasks",
+  signinHeading: "Sign in to Handshake",
+  signinCopy: "Open the Handshake login window, finish signing in, then save your session.",
+  loadCopy: "Pull the latest Project Helix tasks from your account.",
+  fetchButton: "Fetch Project Helix Tasks",
+  connectButton: "Open Handshake Login",
+  dashboardTitle: "Project Helix Tasks",
+  footnote: "Project Helix Tasks · Handshake dashboard",
+};
+
+function applyBranding(connected) {
+  const b = connected ? BRANDING_PRIVATE : BRANDING_PUBLIC;
+  document.title = b.documentTitle;
+  if (elements.mastheadEyebrow) elements.mastheadEyebrow.textContent = b.mastheadEyebrow;
+  if (elements.mastheadTitle) elements.mastheadTitle.textContent = b.mastheadTitle;
+  if (elements.signinHeading) elements.signinHeading.textContent = b.signinHeading;
+  if (elements.signinCopy) elements.signinCopy.textContent = b.signinCopy;
+  if (elements.loadCopy) elements.loadCopy.textContent = b.loadCopy;
+  if (elements.footnoteText) elements.footnoteText.textContent = b.footnote;
+  if (elements.fetchProjectButton) elements.fetchProjectButton.textContent = b.fetchButton;
+  if (elements.connectButton) elements.connectButton.textContent = b.connectButton;
+  if (elements.dashboardTitle) elements.dashboardTitle.textContent = b.dashboardTitle;
+}
+
 function renderConnection(profile) {
   elements.connectionCard.classList.toggle("connected", state.connected);
   elements.connectionTitle.textContent = state.connected
     ? `Signed in${profile?.name ? ` as ${profile.name}` : ""}`
     : "Not signed in";
   elements.connectionCopy.textContent = state.connected
-    ? "Ready to fetch your Helix tasks."
-    : "Open Handshake login to create a local session.";
+    ? "Ready to fetch your tasks."
+    : "Open Login to create a local session.";
   elements.saveLoginButton.disabled = !state.loginWindowOpen;
 
   if (state.helixProject && elements.helixProjectId) {
     elements.helixProjectId.textContent = state.helixProject.id || "";
   }
+
+  applyBranding(state.connected);
 }
 
 function pillClass(value) {
@@ -431,7 +479,9 @@ function formatDate(value) {
 
 function renderDashboard() {
   elements.dashboard.hidden = false;
-  elements.dashboardTitle.textContent = "Project Helix Tasks";
+  elements.dashboardTitle.textContent = state.connected
+    ? BRANDING_PRIVATE.dashboardTitle
+    : BRANDING_PUBLIC.dashboardTitle;
   elements.generatedAt.textContent = `Updated ${new Date(
     state.dashboard.generatedAt
   ).toLocaleString()}`;
@@ -465,7 +515,7 @@ async function startLogin() {
     });
     state.loginWindowOpen = true;
     renderConnection();
-    showMessage("Handshake login window opened. Finish signing in there, then click Save Login.");
+    showMessage("Login window opened. Finish signing in there, then click Save Login.");
   } catch (err) {
     showMessage(err.message, "error");
   } finally {

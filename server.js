@@ -164,7 +164,7 @@ function createLoginManager() {
     const flow = flows.get(sessionId);
 
     if (!flow) {
-      throw new Error("No active login window. Click 'Open Handshake Login' first.");
+      throw new Error("No active login window. Click 'Open Login' first.");
     }
 
     const storageState = await flow.context.storageState();
@@ -305,7 +305,7 @@ function createLoginManager() {
     const flow = flows.get(sessionId);
 
     if (!flow) {
-      throw new Error("No active Handshake login window. Click Open Handshake Login first.");
+      throw new Error("No active login window. Click Open Login first.");
     }
 
     const authState = await flow.context.storageState();
@@ -389,7 +389,6 @@ function createAppServer(options = {}) {
     try {
       if (req.method === "GET" && url.pathname === "/api/status") {
         let session = sessions.get(sessionId);
-        const helixProject = getHelixProject();
 
         if (!session?.authState) {
           const persisted = loadAuthFromDisk();
@@ -400,7 +399,7 @@ function createAppServer(options = {}) {
         }
 
         if (!session?.authState) {
-          sendJson(res, 200, { connected: false, helixProject });
+          sendJson(res, 200, { connected: false });
           return;
         }
 
@@ -408,13 +407,13 @@ function createAppServer(options = {}) {
           const profile = await api.fetchProfile(session.authState);
           sendJson(res, 200, {
             connected: true,
-            helixProject,
-            profile: { name: profile.name || profile.fullName || "Handshake user" },
+            helixProject: getHelixProject(),
+            profile: { name: profile.name || profile.fullName || "User" },
           });
         } catch {
           sessions.clear(sessionId);
           deleteAuthFromDisk();
-          sendJson(res, 200, { connected: false, helixProject });
+          sendJson(res, 200, { connected: false });
         }
         return;
       }
@@ -437,7 +436,7 @@ function createAppServer(options = {}) {
           profile = await api.fetchProfile(storageState);
         } catch {
           sendJson(res, 401, {
-            error: "Login window closed but Handshake auth failed. Try again.",
+            error: "Login window closed but authentication failed. Try again.",
           });
           return;
         }
@@ -446,7 +445,7 @@ function createAppServer(options = {}) {
         saveAuthToDisk(storageState);
         sendJson(res, 200, {
           connected: true,
-          profile: { name: profile.name || profile.fullName || "Handshake user" },
+          profile: { name: profile.name || profile.fullName || "User" },
         });
         return;
       }
@@ -499,7 +498,7 @@ function createAppServer(options = {}) {
           if (/expired|401|403/i.test(err.message)) {
             sessions.clear(sessionId);
             deleteAuthFromDisk();
-            sendJson(res, 401, { error: "Handshake session expired. Sign in again." });
+            sendJson(res, 401, { error: "Session expired. Sign in again." });
             return;
           }
           throw err;
@@ -528,7 +527,7 @@ if (require.main === module) {
 
   server.listen(DEFAULT_PORT, () => {
     console.log(
-      `Project Helix Tasks running at http://localhost:${DEFAULT_PORT} (${
+      `Server running at http://localhost:${DEFAULT_PORT} (${
         IS_PRODUCTION ? "production" : "development"
       } mode)`
     );
