@@ -67,7 +67,6 @@ const elements = {
   saveLoginButton: document.querySelector("#save-login-button"),
   logoutButton: document.querySelector("#logout-button"),
   fetchProjectButton: document.querySelector("#fetch-project-button"),
-  helixProjectId: document.querySelector("#helix-project-id"),
   message: document.querySelector("#message"),
   dashboard: document.querySelector("#dashboard"),
   dashboardTitle: document.querySelector("#dashboard-title"),
@@ -182,11 +181,6 @@ function renderConnection(profile) {
     ? "Ready to fetch your tasks."
     : "Open Login to create a local session.";
   elements.saveLoginButton.disabled = !state.loginWindowOpen;
-
-  if (state.helixProject && elements.helixProjectId) {
-    elements.helixProjectId.textContent = state.helixProject.id || "";
-  }
-
   applyBranding(state.connected);
 }
 
