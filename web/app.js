@@ -36,7 +36,7 @@ const QUICK_FILTERS = {
   },
   internal_audit: {
     label: "Internal Audit",
-    sub: "Review + Internal Audit + Likely Rejected",
+    sub: "Review + Internal Audit",
     accent: "blue",
     test: isInternalAudit,
   },
@@ -53,8 +53,8 @@ const QUICK_FILTERS = {
     test: isPassAt,
   },
   other: {
-    label: "Other",
-    sub: "Clayden Review + misc",
+    label: "Misc",
+    sub: "Clayden Review + others",
     accent: "amber",
     test: (task) =>
       !isDeliveredReady(task) &&
