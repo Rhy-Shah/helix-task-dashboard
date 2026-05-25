@@ -18,10 +18,6 @@ function isInternalAudit(task) {
   return /internal audit|review|likely rejected/i.test(s);
 }
 
-function isInvalid(task) {
-  return /invalid/i.test(task.stage || "");
-}
-
 function isPassAt(task) {
   const s = task.stage || "";
   return s === "Pass@n" || s === "Pass@0" || s === "Submitted for Pass@";
@@ -40,12 +36,6 @@ const QUICK_FILTERS = {
     accent: "blue",
     test: isInternalAudit,
   },
-  invalid: {
-    label: "Invalid",
-    sub: "Invalid PR - Too Simple",
-    accent: "coral",
-    test: isInvalid,
-  },
   pass_at: {
     label: "Pass@",
     sub: "Pass@n + Pass@0 + Submitted",
@@ -54,12 +44,11 @@ const QUICK_FILTERS = {
   },
   other: {
     label: "Misc",
-    sub: "Others",
+    sub: "Invalid + Others",
     accent: "amber",
     test: (task) =>
       !isDeliveredReady(task) &&
       !isInternalAudit(task) &&
-      !isInvalid(task) &&
       !isPassAt(task),
   },
 };
@@ -175,7 +164,7 @@ function renderSummary() {
   const summary = state.dashboard.summary || {};
   const total = summary.total || 0;
 
-  const filterKeys = ["delivered_ready", "pass_at", "internal_audit", "other", "invalid"];
+  const filterKeys = ["delivered_ready", "pass_at", "internal_audit", "other"];
   const cards = [
     { key: "all", label: "Total tasks", sub: "Click to clear category", value: total, accent: "violet" },
     ...filterKeys.map((key) => ({
