@@ -6,7 +6,7 @@ const {
   buildTrpcUrl,
   normalizeProjectInput,
   normalizeProjectList,
-} = require("./handshake-api");
+} = require("./platform-api");
 
 test("normalizeProjectInput accepts project IDs and Handshake project URLs", () => {
   assert.deepEqual(
@@ -84,7 +84,7 @@ test("buildDashboardPayload creates task summaries with project context", () => 
 });
 
 test("normalizeTask extracts updatedAt from common shapes", () => {
-  const { normalizeTask } = require("./handshake-api");
+  const { normalizeTask } = require("./platform-api");
 
   const task = normalizeTask(
     {

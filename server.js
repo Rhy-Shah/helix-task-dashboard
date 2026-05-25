@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
 
-const handshakeApi = require("./handshake-api");
+const handshakeApi = require("./platform-api");
 
 const DEFAULT_PORT = Number(process.env.PORT || 4173);
 const SESSION_COOKIE = "hai_session";
