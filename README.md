@@ -1,11 +1,10 @@
-# Project Helix Tasks
+# Project H Tasks
 
 A small local web app that signs you into Handshake (in a real browser window)
-and shows your **Project Helix** tasks in a clean, filterable dashboard.
+and shows your project tasks in a clean, filterable dashboard.
 
 Each teammate runs it on their **own laptop** with their **own Handshake login**.
 No data leaves your machine; nothing is hosted.
-
 
 ---
 
@@ -28,8 +27,8 @@ Open a terminal and run these four commands, one at a time:
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/Rhy-Shah/helix-task-dashboard.git
-cd helix-task-dashboard
+git clone <REPO_URL>
+cd <repo-folder>
 
 # 2. Install Node dependencies
 npm install
@@ -44,7 +43,7 @@ npm start
 You should see:
 
 ```
-Project Helix Tasks running at http://localhost:4173 (development mode)
+Server running at http://localhost:4173 (development mode)
 ```
 
 Open **<http://localhost:4173>** in your browser.
@@ -60,7 +59,7 @@ The app has two steps:
 1. Click **Open Handshake Login**.
    A new Chromium window opens on the Handshake page.
 2. Sign in normally (SSO / Duo / whatever your school requires).
-   Wait until you see the Project Helix tasks page in that window.
+   Wait until you see your project tasks page in that window.
 3. Come back to **<http://localhost:4173>** and click **Save Login**.
 
 Your session is saved locally in `auth.json` (gitignored, file permissions
@@ -69,17 +68,19 @@ Log Out** or Handshake itself invalidates the session.
 
 ### Step 2 — Load your tasks
 
-Click **Fetch Project Helix Tasks**. The dashboard fills in.
+Click **Fetch Tasks**. The dashboard fills in.
 
 You can:
 
-- Click the **Total / Delivered & Ready / Internal Audit / Pass@ / Other** cards
+- Click the **Total / Delivered & Ready / Pass@ / Internal Audit / Misc** cards
   to filter the table.
 - Use the **search, stage, and build** filters for finer slicing.
 - Use the **Updated from / Updated to** date pickers to filter by when a task
   last changed stage.
+- Click any column header to **sort** (ascending / descending / off).
 - Click **↻ Refresh** at the top of the dashboard any time to re-pull the
   latest tasks (no sign-in needed).
+- Click the small **⧉** icon next to any task ID to copy that single ID.
 - Click **Copy Filtered IDs** to copy every visible task ID to your clipboard
   (one per line, ready to paste into a spreadsheet).
 - Click **Log Out** to wipe your saved session (`auth.json` is deleted).
@@ -91,7 +92,7 @@ You can:
 After the one-time setup, you only need:
 
 ```bash
-cd helix-task-dashboard
+cd <repo-folder>
 npm start
 ```
 
@@ -148,8 +149,8 @@ Then `npm start` again.
 ### "Sign in first." after clicking Save Login
 
 The login window probably closed before you finished signing in. Click
-**Open Handshake Login** again, complete the sign-in fully (until you see the
-Project Helix page), then click **Save Login**.
+**Open Handshake Login** again, complete the sign-in fully (until you see your
+project tasks page), then click **Save Login**.
 
 ### Port 4173 is taken by something else
 
@@ -181,8 +182,8 @@ cloud sync, and no cookies sent anywhere except directly to
 
 ## Optional: change which project gets loaded
 
-By default the app loads the official Project Helix tasks page. To point at a
-different Handshake project, create a `config.json` next to `server.js`:
+To point the dashboard at a different Handshake project, create a `config.json`
+next to `server.js`:
 
 ```json
 {
@@ -198,17 +199,10 @@ different Handshake project, create a `config.json` next to `server.js`:
 
 ```
 server.js           Local Node.js HTTP server
-handshake-api.js    Calls Handshake's tRPC API using your session cookies
+handshake-api.js    Calls Handshake's API using your session cookies
 dashboard-core.js   Pure helpers (summary, filtering)
 web/                Static frontend (HTML / CSS / JS — no framework)
-scripts/            One-off CLI scripts (e.g. legacy `main.js` flow)
+scripts/            One-off CLI scripts
 ```
 
 Tests: `npm test`.
-
----
-
-## Questions / issues
-
-Open an issue on GitHub:
-<https://github.com/Rhy-Shah/helix-task-dashboard/issues>
