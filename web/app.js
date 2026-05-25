@@ -54,7 +54,7 @@ const QUICK_FILTERS = {
   },
   other: {
     label: "Misc",
-    sub: "Clayden Review + others",
+    sub: "others",
     accent: "amber",
     test: (task) =>
       !isDeliveredReady(task) &&
@@ -175,7 +175,7 @@ function renderSummary() {
   const summary = state.dashboard.summary || {};
   const total = summary.total || 0;
 
-  const filterKeys = ["delivered_ready", "internal_audit", "invalid", "pass_at", "other"];
+  const filterKeys = ["delivered_ready", "internal_audit", "pass_at", "other", "invalid"];
   const cards = [
     { key: "all", label: "Total tasks", sub: "click to clear category", value: total, accent: "violet" },
     ...filterKeys.map((key) => ({
