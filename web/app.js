@@ -175,7 +175,7 @@ function renderSummary() {
   const summary = state.dashboard.summary || {};
   const total = summary.total || 0;
 
-  const filterKeys = ["delivered_ready", "internal_audit", "pass_at", "other", "invalid"];
+  const filterKeys = ["delivered_ready", "pass_at", "internal_audit", "other", "invalid"];
   const cards = [
     { key: "all", label: "Total tasks", sub: "Click to clear category", value: total, accent: "violet" },
     ...filterKeys.map((key) => ({
