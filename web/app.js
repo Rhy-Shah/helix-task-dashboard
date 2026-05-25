@@ -7,42 +7,60 @@ const state = {
   sort: { column: null, direction: "asc" },
 };
 
-const PRIMARY_STAGES = new Set([
-  "Delivered",
-  "Ready to Deliver",
-  "Internal Audit",
-  "Pass@n",
-  "Pass@0",
-  "Submitted for Pass@",
-]);
+function isDeliveredReady(task) {
+  const s = task.stage || "";
+  return s === "Delivered" || s === "Ready to Deliver";
+}
+
+function isInternalAudit(task) {
+  const s = task.stage || "";
+  if (/clayden/i.test(s)) return false;
+  return /internal audit|review|likely rejected/i.test(s);
+}
+
+function isInvalid(task) {
+  return /invalid/i.test(task.stage || "");
+}
+
+function isPassAt(task) {
+  const s = task.stage || "";
+  return s === "Pass@n" || s === "Pass@0" || s === "Submitted for Pass@";
+}
 
 const QUICK_FILTERS = {
   delivered_ready: {
     label: "Delivered & Ready",
     sub: "Delivered + Ready to Deliver",
     accent: "green",
-    test: (task) => task.stage === "Delivered" || task.stage === "Ready to Deliver",
+    test: isDeliveredReady,
   },
   internal_audit: {
     label: "Internal Audit",
-    sub: "invalid or rejected",
+    sub: "Review + Internal Audit + Likely Rejected",
     accent: "blue",
-    test: (task) => /internal audit/i.test(task.stage || ""),
+    test: isInternalAudit,
+  },
+  invalid: {
+    label: "Invalid",
+    sub: "Invalid PR - Too Simple",
+    accent: "coral",
+    test: isInvalid,
   },
   pass_at: {
     label: "Pass@",
     sub: "Pass@n + Pass@0 + Submitted",
     accent: "violet",
-    test: (task) => {
-      const s = task.stage || "";
-      return s === "Pass@n" || s === "Pass@0" || s === "Submitted for Pass@";
-    },
+    test: isPassAt,
   },
   other: {
     label: "Other",
-    sub: "Review, failing, misc.",
+    sub: "Clayden Review + misc",
     accent: "amber",
-    test: (task) => !PRIMARY_STAGES.has(task.stage || ""),
+    test: (task) =>
+      !isDeliveredReady(task) &&
+      !isInternalAudit(task) &&
+      !isInvalid(task) &&
+      !isPassAt(task),
   },
 };
 
@@ -157,7 +175,7 @@ function renderSummary() {
   const summary = state.dashboard.summary || {};
   const total = summary.total || 0;
 
-  const filterKeys = ["delivered_ready", "internal_audit", "pass_at", "other"];
+  const filterKeys = ["delivered_ready", "internal_audit", "invalid", "pass_at", "other"];
   const cards = [
     { key: "all", label: "Total tasks", sub: "click to clear category", value: total, accent: "violet" },
     ...filterKeys.map((key) => ({
