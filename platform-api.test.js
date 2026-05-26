@@ -177,6 +177,29 @@ test("fetchAllTasks halving recovers tail when full page 500s at offset 10", asy
   assert.equal(tasks.length, 15);
 });
 
+test("fetchAllTasks keeps reduced limit after halving for 25 tasks", async () => {
+  const fetchPage = async (_url, _state, limit, offset) => {
+    if (offset === 0 && limit >= 10) {
+      return tasksPayload(Array.from({ length: 10 }, (_, i) => `t${i}`));
+    }
+    if (limit >= 10) {
+      throw new Error("Tasks API failed with status 500.");
+    }
+    const remaining = 25 - offset;
+    const count = Math.min(limit, remaining);
+    if (count <= 0) return tasksPayload([]);
+    return tasksPayload(Array.from({ length: count }, (_, i) => `t${offset + i}`));
+  };
+
+  const tasks = await fetchAllTasks(PROJECT_URL, STORAGE, {
+    pageSize: 10,
+    fetchPage,
+    retryDelays: [0, 0, 0],
+  });
+
+  assert.equal(tasks.length, 25);
+});
+
 test("fetchAllTasks halving recovers 18 tasks when page 2 needs smaller limit", async () => {
   const fetchPage = mockFetchPageWithLimitRules([
     {

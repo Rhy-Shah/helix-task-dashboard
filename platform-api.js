@@ -475,6 +475,7 @@ async function fetchAllPaginated(
 ) {
   const tasks = [];
   let offset = 0;
+  let preferredLimit = pageSize;
   const maxPages = 5000;
   let finished = false;
 
@@ -485,7 +486,7 @@ async function fetchAllPaginated(
       projectUrl,
       storageState,
       offset,
-      pageSize,
+      preferredLimit,
       retryDelays
     );
 
@@ -500,6 +501,14 @@ async function fetchAllPaginated(
     if (pageTasks.length < limitUsed) {
       finished = true;
       break;
+    }
+
+    // After a halved page succeeds, keep using that smaller limit. The API 500s when
+    // offset+limit extends past the last task; jumping back to pageSize skips rows.
+    if (limitUsed > 0 && limitUsed < pageSize) {
+      preferredLimit = limitUsed;
+    } else if (pageTasks.length === pageSize && limitUsed === pageSize) {
+      preferredLimit = pageSize;
     }
   }
 
