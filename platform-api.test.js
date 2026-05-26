@@ -99,22 +99,75 @@ test("fetchAllTasks pages until a partial last page", async () => {
   assert.deepEqual(calls, [0, 10]);
 });
 
-test("fetchAllTasks treats 500 past the first page as end of list", async () => {
+test("fetchAllTasks retries 500 on a full next page and returns all tasks", async () => {
+  const calls = [];
+  const failuresAtOffset10 = { count: 0 };
+  const fetchPage = async (...args) => {
+    const offset = args[3];
+    calls.push(offset);
+    if (offset === 0) {
+      return tasksPayload(Array.from({ length: 10 }, (_, i) => `t${i}`));
+    }
+    if (offset === 10) {
+      failuresAtOffset10.count += 1;
+      if (failuresAtOffset10.count < 3) {
+        throw new Error("Tasks API failed with status 500.");
+      }
+      return tasksPayload(Array.from({ length: 8 }, (_, i) => `t${i + 10}`));
+    }
+    throw new Error(`unexpected offset ${offset}`);
+  };
+
+  const tasks = await fetchAllTasks(PROJECT_URL, STORAGE, {
+    pageSize: 10,
+    fetchPage,
+    retryDelays: [0, 0],
+  });
+
+  assert.equal(tasks.length, 18);
+  assert.equal(failuresAtOffset10.count, 3);
+  assert.deepEqual(
+    calls.filter((offset) => offset === 10).length,
+    3
+  );
+});
+
+test("fetchAllTasks treats 500 past the true end after retries and empty probe", async () => {
   const calls = [];
   const fetchPage = async (...args) => {
     const offset = args[3];
     calls.push(offset);
     if (offset === 0) return tasksPayload(Array.from({ length: 10 }, (_, i) => `t${i}`));
+    if (offset === 20) return tasksPayload([]);
     throw new Error("Tasks API failed with status 500.");
   };
 
   const tasks = await fetchAllTasks(PROJECT_URL, STORAGE, {
     pageSize: 10,
     fetchPage,
+    retryDelays: [0, 0],
   });
 
   assert.equal(tasks.length, 10);
-  assert.deepEqual(calls, [0, 10]);
+  assert.ok(calls.filter((offset) => offset === 10).length >= 3);
+  assert.ok(calls.includes(20));
+});
+
+// Known limitation: if offset N permanently 500s while more tasks exist at N,
+// probing offset N+pageSize may also be empty (e.g. 18 tasks, page 2 stuck, probe 20 empty).
+test("fetchAllTasks may truncate when a middle page permanently 500s", async () => {
+  const fetchPage = mockFetchPage({
+    0: tasksPayload(Array.from({ length: 10 }, (_, i) => `t${i}`)),
+    20: tasksPayload([]),
+  });
+
+  const tasks = await fetchAllTasks(PROJECT_URL, STORAGE, {
+    pageSize: 10,
+    fetchPage,
+    retryDelays: [0, 0],
+  });
+
+  assert.equal(tasks.length, 10);
 });
 
 test("fetchAllTasks rethrows 500 on the first page", async () => {

@@ -261,26 +261,92 @@ function isTasksPage500(err) {
   return err?.message?.includes("status 500");
 }
 
+const TASKS_PAGE_RETRY_ATTEMPTS = 3;
+const TASKS_PAGE_RETRY_DELAYS_MS = [50, 150, 300];
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchTasksPageWithRetries(
+  fetchPage,
+  projectUrl,
+  storageState,
+  limit,
+  offset,
+  retryDelays
+) {
+  let lastError;
+  for (let attempt = 0; attempt < TASKS_PAGE_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return await fetchPage(projectUrl, storageState, limit, offset);
+    } catch (err) {
+      lastError = err;
+      if (!isTasksPage500(err)) throw err;
+      if (attempt < TASKS_PAGE_RETRY_ATTEMPTS - 1) {
+        await delay(retryDelays[attempt] ?? 300);
+      }
+    }
+  }
+  throw lastError;
+}
+
 async function fetchAllTasks(projectInput, storageState, options = {}) {
   const { projectUrl } = normalizeProjectInput(projectInput);
   const pageSize = options.pageSize ?? PAGE_SIZE;
   const fetchPage = options.fetchPage || fetchTasksPage;
+  const retryDelays = options.retryDelays ?? TASKS_PAGE_RETRY_DELAYS_MS;
   const tasks = [];
+  let lastPageWasFull = false;
 
   for (let offset = 0; ; offset += pageSize) {
     let payload;
     try {
-      payload = await fetchPage(projectUrl, storageState, pageSize, offset);
+      payload = await fetchTasksPageWithRetries(
+        fetchPage,
+        projectUrl,
+        storageState,
+        pageSize,
+        offset,
+        retryDelays
+      );
     } catch (err) {
-      // Past the last page the API often returns 500 instead of an empty list.
-      if (offset > 0 && isTasksPage500(err)) break;
-      throw err;
+      if (offset === 0 || !isTasksPage500(err)) throw err;
+
+      // A full previous page means more tasks may exist; do not stop on 500 alone.
+      if (!lastPageWasFull) break;
+
+      // Past the true end the API often returns 500 instead of an empty page. After
+      // retries, probe one page ahead — empty probe usually means end-of-list, but if
+      // this page permanently 500s while tasks remain at this offset, we may truncate.
+      let probeTasks = [];
+      try {
+        const probePayload = await fetchPage(
+          projectUrl,
+          storageState,
+          pageSize,
+          offset + pageSize
+        );
+        probeTasks = extractTasks(probePayload);
+      } catch (probeErr) {
+        if (!isTasksPage500(probeErr)) throw probeErr;
+        break;
+      }
+
+      if (probeTasks.length > 0) {
+        throw new Error(
+          `Tasks pagination incomplete at offset ${offset}: page failed with status 500 after ${TASKS_PAGE_RETRY_ATTEMPTS} retries but offset ${offset + pageSize} returned ${probeTasks.length} tasks.`
+        );
+      }
+
+      break;
     }
 
     const pageTasks = extractTasks(payload);
     if (pageTasks.length === 0) break;
 
     tasks.push(...pageTasks);
+    lastPageWasFull = pageTasks.length === pageSize;
     if (pageTasks.length < pageSize) break;
   }
 
