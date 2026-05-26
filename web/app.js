@@ -1,9 +1,16 @@
+const ACTIVITY_FIELDS = ["stage", "buildStatus", "updatedAt", "title"];
+const ACTIVITY_STORAGE_KEY = "hai_activity_state";
+
 const state = {
   connected: false,
   dashboard: null,
   loginWindowOpen: false,
   quickFilter: null,
   sort: { column: "updatedAt", direction: "desc" },
+  previousTaskSnapshot: null,
+  latestActivity: [],
+  activityFromThisRefresh: false,
+  activityReady: false,
 };
 
 const QUICK_FILTERS = {
@@ -57,11 +64,11 @@ const BRANDING_PUBLIC = {
 };
 
 const BRANDING_PRIVATE = {
-  documentTitle: "Project Helix Tasks",
-  mastheadTitle: "Project Helix Tasks",
+  documentTitle: "Project Helix",
+  mastheadTitle: "Project Helix",
   subtitle: "Every Project Helix task, stage, and build in one place.",
   connectButton: "Login",
-  footnote: "Project Helix Tasks · Handshake dashboard",
+  footnote: "Project Helix · Handshake dashboard",
 };
 
 const elements = {
@@ -73,13 +80,19 @@ const elements = {
   connectButton: document.querySelector("#connect-button"),
   saveLoginButton: document.querySelector("#save-login-button"),
   logoutButton: document.querySelector("#logout-button"),
+  messageSlot: document.querySelector("#message-slot"),
   message: document.querySelector("#message"),
+  messageText: document.querySelector("#message-text"),
+  messageDismiss: document.querySelector("#message-dismiss"),
   loadingState: document.querySelector("#loading-state"),
   dashboard: document.querySelector("#dashboard"),
   mastheadMeta: document.querySelector("#masthead-meta"),
   generatedAt: document.querySelector("#generated-at"),
   refreshButton: document.querySelector("#refresh-button"),
   summaryGrid: document.querySelector("#summary-grid"),
+  activityPanel: document.querySelector("#activity-panel"),
+  activityMeta: document.querySelector("#activity-meta"),
+  activityList: document.querySelector("#activity-list"),
   searchInput: document.querySelector("#search-input"),
   stageFilter: document.querySelector("#stage-filter"),
   buildFilter: document.querySelector("#build-filter"),
@@ -110,15 +123,109 @@ async function request(path, options = {}) {
   return body;
 }
 
+const MESSAGE_AUTO_DISMISS_MS = 3000;
+const MESSAGE_SLOT_MS = 550;
+let messageDismissTimer = null;
+let messageHideDone = null;
+
+function messageSlotHeight() {
+  if (!elements.message || elements.message.hidden) return 0;
+  return elements.message.offsetHeight;
+}
+
+function finishHideMessage() {
+  if (!elements.message) return;
+  elements.message.hidden = true;
+  elements.message.classList.remove("hiding");
+  if (elements.messageText) elements.messageText.textContent = "";
+  if (elements.messageSlot) {
+    elements.messageSlot.classList.remove("is-open");
+    elements.messageSlot.style.height = "";
+    elements.messageSlot.style.marginBottom = "";
+  }
+  if (messageHideDone && elements.messageSlot) {
+    elements.messageSlot.removeEventListener("transitionend", messageHideDone);
+    messageHideDone = null;
+  }
+}
+
+function openMessageSlot() {
+  const slot = elements.messageSlot;
+  if (!slot) return;
+
+  slot.classList.add("is-open");
+  slot.style.height = "0px";
+  slot.style.marginBottom = "16px";
+  const target = messageSlotHeight();
+  requestAnimationFrame(() => {
+    slot.style.height = `${target}px`;
+    const onOpen = (event) => {
+      if (event.target !== slot || event.propertyName !== "height") return;
+      slot.removeEventListener("transitionend", onOpen);
+      slot.style.height = "auto";
+    };
+    slot.addEventListener("transitionend", onOpen);
+  });
+}
+
 function showMessage(text, type = "info") {
+  if (messageDismissTimer) {
+    clearTimeout(messageDismissTimer);
+    messageDismissTimer = null;
+  }
+  if (messageHideDone && elements.messageSlot) {
+    elements.messageSlot.removeEventListener("transitionend", messageHideDone);
+    messageHideDone = null;
+  }
+  if (!elements.message) return;
+
+  const typeClass = type === "error" ? "error" : "";
+  if (elements.messageText) elements.messageText.textContent = text;
   elements.message.hidden = false;
-  elements.message.textContent = text;
-  elements.message.className = `message ${type === "error" ? "error" : ""}`;
+  elements.message.classList.remove("hiding");
+  elements.message.className = `message ${typeClass}`.trim();
+  openMessageSlot();
+
+  messageDismissTimer = setTimeout(clearMessage, MESSAGE_AUTO_DISMISS_MS);
 }
 
 function clearMessage() {
-  elements.message.hidden = true;
-  elements.message.textContent = "";
+  if (messageDismissTimer) {
+    clearTimeout(messageDismissTimer);
+    messageDismissTimer = null;
+  }
+  if (!elements.message || elements.message.hidden) return;
+  if (elements.message.classList.contains("hiding")) return;
+
+  const slot = elements.messageSlot;
+  let finished = false;
+  const completeHide = () => {
+    if (finished) return;
+    finished = true;
+    finishHideMessage();
+  };
+
+  if (slot) {
+    messageHideDone = (event) => {
+      if (event.target !== slot || event.propertyName !== "height") return;
+      completeHide();
+    };
+    slot.addEventListener("transitionend", messageHideDone);
+  }
+
+  setTimeout(completeHide, MESSAGE_SLOT_MS + 80);
+
+  elements.message.classList.add("hiding");
+
+  if (slot) {
+    const current = slot.style.height === "auto" ? messageSlotHeight() : slot.offsetHeight;
+    slot.style.height = `${current}px`;
+    slot.style.marginBottom = "16px";
+    void slot.offsetHeight;
+    slot.style.height = "0px";
+    slot.style.marginBottom = "0px";
+    slot.classList.remove("is-open");
+  }
 }
 
 function setBusy(button, busyText) {
@@ -454,6 +561,191 @@ function renderTable() {
     .join("");
 }
 
+function taskSnapshot(task) {
+  return {
+    id: task.id,
+    stage: task.stage || "",
+    buildStatus: task.buildStatus ?? null,
+    updatedAt: task.updatedAt ?? null,
+    title: task.title || "",
+  };
+}
+
+function buildSnapshotMap(tasks) {
+  return Object.fromEntries(tasks.map((task) => [task.id, taskSnapshot(task)]));
+}
+
+function loadActivityState() {
+  try {
+    const raw = sessionStorage.getItem(ACTIVITY_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (parsed.previousTaskSnapshot) {
+      state.previousTaskSnapshot = parsed.previousTaskSnapshot;
+    }
+    if (Array.isArray(parsed.latestActivity)) {
+      state.latestActivity = parsed.latestActivity;
+    }
+    state.activityFromThisRefresh = Boolean(parsed.activityFromThisRefresh);
+    state.activityReady = Boolean(parsed.activityReady);
+  } catch {
+    // ignore corrupt storage
+  }
+}
+
+function saveActivityState() {
+  try {
+    sessionStorage.setItem(
+      ACTIVITY_STORAGE_KEY,
+      JSON.stringify({
+        previousTaskSnapshot: state.previousTaskSnapshot,
+        latestActivity: state.latestActivity,
+        activityFromThisRefresh: state.activityFromThisRefresh,
+        activityReady: state.activityReady,
+      })
+    );
+  } catch {
+    // ignore quota errors
+  }
+}
+
+function clearActivityState() {
+  try {
+    sessionStorage.removeItem(ACTIVITY_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+function activityFieldLabel(field) {
+  if (field === "buildStatus") return "Build";
+  if (field === "updatedAt") return "Updated";
+  if (field === "title") return "Title";
+  return "Stage";
+}
+
+function formatActivityValue(field, value) {
+  if (field === "updatedAt") return formatDate(value);
+  if (value === null || value === undefined || value === "") return "—";
+  return String(value);
+}
+
+function diffTasksSinceRefresh(previousById, currentTasks) {
+  const activities = [];
+
+  for (const task of currentTasks) {
+    const prev = previousById[task.id];
+    const snap = taskSnapshot(task);
+
+    if (!prev) {
+      activities.push({ task, changes: [], isNew: true });
+      continue;
+    }
+
+    const changes = [];
+    for (const field of ACTIVITY_FIELDS) {
+      const from = prev[field];
+      const to = snap[field];
+      if (String(from ?? "") !== String(to ?? "")) {
+        changes.push({ field, from, to });
+      }
+    }
+
+    if (changes.length > 0) {
+      activities.push({ task, changes, isNew: false });
+    }
+  }
+
+  return activities.sort((a, b) => {
+    const at = a.task.updatedAt ? new Date(a.task.updatedAt).getTime() : 0;
+    const bt = b.task.updatedAt ? new Date(b.task.updatedAt).getTime() : 0;
+    return bt - at;
+  });
+}
+
+function updateLatestActivity(currentTasks) {
+  const previous = state.previousTaskSnapshot;
+
+  if (!previous) {
+    state.previousTaskSnapshot = buildSnapshotMap(currentTasks);
+    state.latestActivity = [];
+    state.activityFromThisRefresh = false;
+    state.activityReady = false;
+    saveActivityState();
+    return;
+  }
+
+  state.activityReady = true;
+  const fresh = diffTasksSinceRefresh(previous, currentTasks);
+
+  if (fresh.length > 0) {
+    state.latestActivity = fresh;
+    state.activityFromThisRefresh = true;
+  } else {
+    state.activityFromThisRefresh = false;
+  }
+
+  state.previousTaskSnapshot = buildSnapshotMap(currentTasks);
+  saveActivityState();
+}
+
+function describeActivityChange(entry) {
+  if (entry.isNew) return "New task in your list";
+  return entry.changes
+    .map(
+      (c) =>
+        `${activityFieldLabel(c.field)}: ${formatActivityValue(c.field, c.from)} → ${formatActivityValue(c.field, c.to)}`
+    )
+    .join(" · ");
+}
+
+function renderActivity() {
+  if (!elements.activityPanel || !elements.activityList) return;
+
+  const entries = state.latestActivity;
+  elements.activityPanel.hidden = false;
+
+  if (entries.length === 0) {
+    if (elements.activityMeta) {
+      elements.activityMeta.textContent = state.activityReady
+        ? "No changes on this refresh"
+        : "";
+    }
+    elements.activityList.innerHTML = `<li class="activity-empty">${
+      state.activityReady
+        ? "No changes on this refresh. Your last activity list will appear here after something updates."
+        : "First refresh saved a baseline. Click Refresh again — any task changes will show up here and stay until the next update."
+    }</li>`;
+    return;
+  }
+
+  if (elements.activityMeta) {
+    const n = entries.length;
+    elements.activityMeta.textContent = state.activityFromThisRefresh
+      ? `${n} task${n === 1 ? "" : "s"} changed on this refresh`
+      : `No changes on this refresh — showing previous update (${n} task${n === 1 ? "" : "s"})`;
+  }
+
+  elements.activityList.innerHTML = entries
+    .map((entry) => {
+      const task = entry.task;
+      return `
+        <li class="activity-item">
+          <div class="activity-item-top">
+            <span class="mono activity-id">${escapeHtml(task.id)}</span>
+            <span class="pill ${pillClass(task.stage)}">${escapeHtml(task.stage)}</span>
+            <span class="pill ${pillClass(task.buildStatus || "None")}">${escapeHtml(
+              task.buildStatus || "None"
+            )}</span>
+            <span class="activity-date">${escapeHtml(formatDate(task.updatedAt))}</span>
+          </div>
+          <p class="activity-change">${escapeHtml(describeActivityChange(entry))}</p>
+        </li>
+      `;
+    })
+    .join("");
+}
+
 function renderDashboard() {
   elements.dashboard.hidden = false;
   if (elements.mastheadMeta) elements.mastheadMeta.hidden = false;
@@ -462,7 +754,9 @@ function renderDashboard() {
   ).toLocaleString()}`;
   state.quickFilter = null;
   state.sort = { column: "updatedAt", direction: "desc" };
+  updateLatestActivity(state.dashboard.tasks || []);
   renderSummary();
+  renderActivity();
   renderFilters();
   renderSortIndicators();
   renderTable();
@@ -563,6 +857,11 @@ async function logout() {
   state.connected = false;
   state.loginWindowOpen = false;
   state.dashboard = null;
+  state.previousTaskSnapshot = null;
+  state.latestActivity = [];
+  state.activityFromThisRefresh = false;
+  state.activityReady = false;
+  clearActivityState();
   elements.dashboard.hidden = true;
   if (elements.mastheadMeta) elements.mastheadMeta.hidden = true;
   if (elements.loadingState) elements.loadingState.hidden = true;
@@ -636,6 +935,8 @@ async function copyFilteredIds(button) {
   }
 }
 
+elements.messageDismiss?.addEventListener("click", clearMessage);
+
 elements.connectButton.addEventListener("click", startLogin);
 elements.saveLoginButton.addEventListener("click", saveLogin);
 elements.logoutButton.addEventListener("click", logout);
@@ -685,4 +986,5 @@ elements.taskTable.addEventListener("click", async (event) => {
   control.addEventListener("change", onChange);
 });
 
+loadActivityState();
 loadStatus({ autoFetch: true }).catch((err) => showMessage(err.message, "error"));

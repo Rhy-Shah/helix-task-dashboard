@@ -327,15 +327,69 @@ select:focus {
   box-shadow: 0 0 0 3px var(--brand-soft);
 }
 
+.message-slot {
+  height: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+  transition:
+    height 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+    margin-bottom 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.message-slot.is-open {
+  margin-bottom: 16px;
+}
+
 .message {
-  margin: 0 0 16px;
-  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 10px 12px 10px 14px;
   color: var(--blue);
   background: var(--blue-soft);
   border: 1px solid #c8dcfb;
   border-radius: var(--radius-sm);
   font-size: 14px;
   font-weight: 500;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.message.hiding {
+  opacity: 0;
+  transform: translateY(-3px);
+  pointer-events: none;
+}
+
+.message p {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.message-dismiss {
+  flex-shrink: 0;
+  min-height: 28px;
+  width: 28px;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 20px;
+  line-height: 1;
+  opacity: 0.65;
+  cursor: pointer;
+}
+
+.message-dismiss:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
 }
 
 .message.error {
@@ -443,6 +497,85 @@ select:focus {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 18px;
+}
+
+.activity-panel {
+  margin-bottom: 18px;
+  padding: 16px 18px;
+}
+
+.activity-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.activity-heading h2 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.activity-meta {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.activity-item {
+  padding: 10px 12px;
+  background: #f9fafb;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.activity-item-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.activity-id {
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.activity-date {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.activity-change {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.activity-empty {
+  padding: 14px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  background: #f9fafb;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
 }
 
 .metric {

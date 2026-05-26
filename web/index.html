@@ -35,7 +35,12 @@
         </div>
       </header>
 
-      <section class="message" id="message" hidden></section>
+      <div class="message-slot" id="message-slot">
+        <section class="message" id="message" hidden>
+          <p id="message-text"></p>
+          <button type="button" class="message-dismiss" id="message-dismiss" aria-label="Dismiss">×</button>
+        </section>
+      </div>
 
       <section class="loading-state" id="loading-state" hidden>
         <span class="loading-dot"></span>
@@ -44,6 +49,14 @@
 
       <section class="dashboard" id="dashboard" hidden>
         <div class="summary-grid" id="summary-grid"></div>
+
+        <article class="panel activity-panel" id="activity-panel">
+          <div class="activity-heading">
+            <h2>Latest activity</h2>
+            <span id="activity-meta" class="activity-meta"></span>
+          </div>
+          <ul id="activity-list" class="activity-list"></ul>
+        </article>
 
         <div class="dashboard-grid">
           <article class="panel span-2">
