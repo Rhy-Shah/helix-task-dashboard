@@ -1,6 +1,7 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const http = require("node:http");
+const os = require("node:os");
 const path = require("node:path");
 
 const handshakeApi = require("./platform-api");
@@ -10,7 +11,12 @@ const SESSION_COOKIE = "hai_session";
 const WEB_DIR = path.join(__dirname, "web");
 const CONFIG_PATH = path.join(__dirname, "config.json");
 const AUTH_PATH = path.join(__dirname, "auth.json");
-const LOGIN_PROFILE_DIR = path.join(__dirname, ".playwright-login-profile");
+// One Chrome profile per OS user (not per repo clone). Keeps login personal on shared machines.
+const LOGIN_PROFILE_DIR = path.join(
+  os.homedir(),
+  ".project-h-task-dashboard",
+  "login-profile"
+);
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
 const LOGIN_LAUNCH_OPTS = {

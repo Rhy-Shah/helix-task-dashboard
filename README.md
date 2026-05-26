@@ -2,6 +2,8 @@
 
 A local dashboard for your project tasks. Everything runs on your machine — nothing is hosted online.
 
+**One person per computer:** Each fellow runs their own copy. **Login** opens **your** installed Chrome on **your** laptop with **your** Google account. Sessions are saved in `auth.json` and `~/.project-h-task-dashboard/login-profile` on that machine only — not shared on GitHub or between users.
+
 ## What you need
 
 - **Node.js 18+** ([nodejs.org](https://nodejs.org))
@@ -145,7 +147,7 @@ After the first refresh, this section shows what changed since your last refresh
 | Problem | What to do |
 | --- | --- |
 | Clicked **Login** but nothing opens | Run `npm start` from a normal terminal. Re-run `npx playwright install chromium`. |
-| Google says **“This browser or app may not be secure”** | Google blocks many automated browsers. On **Login**, the app opens **installed Google Chrome** with a saved local profile (terminal: `[login] Using Google Chrome (persistent profile)`). Install [Google Chrome](https://www.google.com/chrome/), sign in in **that** window—not on localhost—then **Save Login** if tasks do not load. If it still fails: quit Chrome completely, delete the folder `.playwright-login-profile` in the repo, run `npm start` again, and retry. Try **non-Google SSO** on the platform if your account has it. Some Google accounts block automation entirely—there is no guaranteed fix. |
+| Google says **“This browser or app may not be secure”** | Google blocks many automated browsers. On **Login**, the app opens **installed Google Chrome** with a saved local profile (terminal: `[login] Using Google Chrome (persistent profile)`). Install [Google Chrome](https://www.google.com/chrome/), sign in in **that** window—not on localhost—then **Save Login** if tasks do not load. If it still fails: quit Chrome completely, delete `~/.project-h-task-dashboard/login-profile` (Mac/Linux) or `%USERPROFILE%\.project-h-task-dashboard\login-profile` (Windows), run `npm start` again, and retry. Try **non-Google SSO** on the platform if your account has it. Some Google accounts block automation entirely—there is no guaranteed fix. |
 | Google sign-in fails or loops in the login window | Complete OAuth **inside the window opened by Login**, not on localhost. After you see your project/tasks there, use **Save Login** on the dashboard if the window does not close on its own. |
 | Signed in on the platform in Chrome, but dashboard says **Not signed in** | That session is in a different browser. Use **Login** on the dashboard so the Playwright window captures cookies. |
 | Chromium closes before you finish SSO | Click **Login** again and complete the full flow. |
