@@ -767,9 +767,9 @@ function describeActivityChangeLine(change) {
   return `${activityFieldLabel(change.field)} changed from ${from} to ${to}`;
 }
 
-function describeActivityChanges(entry) {
-  if (entry.isNew) return ["New task added to your list"];
-  return entry.changes.map(describeActivityChangeLine);
+function describeActivityChange(entry) {
+  if (entry.isNew) return "New task added to your list";
+  return entry.changes.map(describeActivityChangeLine).join(" · ");
 }
 
 function renderActivity() {
@@ -802,31 +802,35 @@ function renderActivity() {
   elements.activityList.innerHTML = entries
     .map((entry) => {
       const task = entry.task;
-      const changeLines = describeActivityChanges(entry);
+      const changeText = describeActivityChange(entry);
       return `
         <li class="activity-item">
-          <div class="activity-item-top">
-            <span class="task-id-cell">
-              <span class="mono task-id-text activity-id">${escapeHtml(task.id)}</span>
-              <button
-                type="button"
-                class="copy-id-button"
-                data-task-id="${escapeHtml(task.id)}"
-                title="Copy task ID"
-                aria-label="Copy task ID ${escapeHtml(task.id)}"
-              >⧉</button>
-            </span>
-            <span class="pill ${pillClass(task.stage)}">${escapeHtml(task.stage)}</span>
-            <span class="pill ${pillClass(task.buildStatus || "None")}">${escapeHtml(
-              task.buildStatus || "None"
-            )}</span>
-            <span class="activity-date">${escapeHtml(formatDate(task.updatedAt))}</span>
+          <div class="activity-row">
+            <div class="activity-col activity-col-id mono">
+              <span class="task-id-cell">
+                <span class="task-id-text" title="${escapeHtml(task.id)}">${escapeHtml(task.id)}</span>
+                <button
+                  type="button"
+                  class="copy-id-button"
+                  data-task-id="${escapeHtml(task.id)}"
+                  title="Copy task ID"
+                  aria-label="Copy task ID ${escapeHtml(task.id)}"
+                >⧉</button>
+              </span>
+            </div>
+            <div class="activity-col activity-col-stage">
+              <span class="pill ${pillClass(task.stage)}">${escapeHtml(task.stage)}</span>
+            </div>
+            <div class="activity-col activity-col-build">
+              <span class="pill ${pillClass(task.buildStatus || "None")}">${escapeHtml(
+                task.buildStatus || "None"
+              )}</span>
+            </div>
+            <div class="activity-col activity-col-date muted-cell" title="${escapeHtml(
+              task.updatedAt || ""
+            )}">${escapeHtml(formatDate(task.updatedAt))}</div>
           </div>
-          <div class="activity-changes">
-            ${changeLines
-              .map((line) => `<p class="activity-change">${escapeHtml(line)}</p>`)
-              .join("")}
-          </div>
+          <p class="activity-change" title="${escapeHtml(changeText)}">${escapeHtml(changeText)}</p>
         </li>
       `;
     })

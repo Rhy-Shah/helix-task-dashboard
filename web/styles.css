@@ -529,58 +529,95 @@ select:focus {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 8px;
-  max-height: 280px;
+  gap: 6px;
+  max-height: 300px;
   overflow-y: auto;
 }
 
 .activity-item {
-  padding: 10px 12px;
-  background: #f9fafb;
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
+  transition: background 120ms ease, border-color 120ms ease;
 }
 
-.activity-item-top {
-  display: flex;
-  flex-wrap: wrap;
+.activity-item:hover {
+  background: #fafbfc;
+  border-color: #d8dee6;
+}
+
+.activity-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) auto auto auto;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: 10px 14px;
+  padding: 10px 14px 4px;
 }
 
-.activity-item-top .task-id-cell {
-  flex: 1 1 200px;
+.activity-col {
   min-width: 0;
+}
+
+.activity-col-id .task-id-cell {
   max-width: 100%;
 }
 
-.activity-id {
-  font-size: 12px;
-  word-break: break-all;
+.activity-col-id .task-id-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.activity-col-stage,
+.activity-col-build {
+  flex-shrink: 0;
+}
+
+.activity-col-date {
+  text-align: right;
+  white-space: nowrap;
 }
 
 .activity-item:hover .copy-id-button {
   opacity: 1;
 }
 
-.activity-date {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.activity-changes {
-  display: grid;
-  gap: 4px;
-}
-
 .activity-change {
   margin: 0;
-  color: var(--ink-soft);
-  font-size: 13px;
-  line-height: 1.45;
+  padding: 0 14px 10px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 720px) {
+  .activity-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "id id"
+      "stage build"
+      "date date";
+    gap: 8px 10px;
+  }
+
+  .activity-col-id {
+    grid-area: id;
+  }
+
+  .activity-col-stage {
+    grid-area: stage;
+  }
+
+  .activity-col-build {
+    grid-area: build;
+  }
+
+  .activity-col-date {
+    grid-area: date;
+    text-align: left;
+  }
 }
 
 .activity-empty {
