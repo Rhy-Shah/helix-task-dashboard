@@ -164,9 +164,10 @@ a:hover {
 }
 
 .status-dot {
+  flex-shrink: 0;
+  align-self: center;
   width: 10px;
   height: 10px;
-  margin-top: 6px;
   background: var(--amber);
   border-radius: 999px;
   box-shadow: 0 0 0 4px var(--amber-soft);

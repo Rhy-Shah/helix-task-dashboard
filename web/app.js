@@ -3,7 +3,7 @@ const state = {
   dashboard: null,
   loginWindowOpen: false,
   quickFilter: null,
-  sort: { column: null, direction: "asc" },
+  sort: { column: "updatedAt", direction: "desc" },
 };
 
 const QUICK_FILTERS = {
@@ -461,6 +461,7 @@ function renderDashboard() {
     state.dashboard.generatedAt
   ).toLocaleString()}`;
   state.quickFilter = null;
+  state.sort = { column: "updatedAt", direction: "desc" };
   renderSummary();
   renderFilters();
   renderSortIndicators();
