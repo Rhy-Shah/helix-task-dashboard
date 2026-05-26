@@ -32,10 +32,10 @@ Daily use is just `npm start`. Your saved session is reused; no sign-in needed u
 | Problem | Fix |
 | --- | --- |
 | `Executable doesn't exist` | `npx playwright install chromium` |
-| Login window flashes and closes (macOS) | `xattr -dr com.apple.quarantine ~/Library/Caches/ms-playwright` |
-| Login window crashes with `SIGABRT` / `chrome-mac-x64` | Run `npm start` from the real macOS Terminal, not an IDE-integrated terminal |
-| `EADDRINUSE :::4173` | `pkill -f "node server.js"` then `npm start` |
-| Port 4173 is taken by something else | `PORT=5050 npm start` |
+| Login window flashes and closes | Run `npx playwright install chromium` again. If your OS blocked the browser (security prompt, quarantine, or antivirus), allow Chromium in system settings or reinstall Playwright. |
+| Login window crashes on open | Run `npm start` from a normal system shell (Terminal, PowerShell, iTerm, etc.), not only inside an IDE sandbox. Re-run `npx playwright install chromium` so it matches your OS and CPU (e.g. Apple Silicon vs x64 on Windows/Linux). |
+| `EADDRINUSE :::4173` | Another copy of the server is still running. Stop it (close that terminal, or end the `node server.js` process in Task Manager / Activity Monitor), then `npm start` again. |
+| Port 4173 is taken by something else | `PORT=5050 npm start` then open <http://localhost:5050> |
 
 ## What gets stored
 
