@@ -153,15 +153,25 @@ function extractTasks(apiPayload) {
 }
 
 function extractPastHistoryTasks(apiPayload) {
-  const data = apiPayload?.[0]?.result?.data?.json;
-  if (!data) {
-    throw new Error("Unexpected past project history response shape.");
+  const entry = apiPayload?.[0];
+  if (entry?.error) {
+    throw new Error(
+      entry.error?.json?.message || "Past project history returned an error."
+    );
   }
+
+  const data = entry?.result?.data?.json;
+  if (!data) return [];
   if (Array.isArray(data)) return data;
   if (Array.isArray(data.tasks)) return data.tasks;
   if (Array.isArray(data.taskHistory)) return data.taskHistory;
   if (Array.isArray(data.history)) return data.history;
+  if (Array.isArray(data.items)) return data.items;
   return [];
+}
+
+function isAuthError(err) {
+  return /401|403|expired|not connected/i.test(err?.message || "");
 }
 
 function isPastProjectUrl(projectUrl) {
@@ -299,6 +309,8 @@ async function fetchPastProjectTaskHistoryPage(projectUrl, storageState, limit, 
     },
   });
 
+  const payload = await response.json();
+
   if (response.status === 401 || response.status === 403) {
     throw new Error("Login expired. Sign in again.");
   }
@@ -306,7 +318,32 @@ async function fetchPastProjectTaskHistoryPage(projectUrl, storageState, limit, 
     throw new Error(`Past project history API failed with status ${response.status}.`);
   }
 
-  return response.json();
+  return payload;
+}
+
+async function fetchPastProjectTaskHistoryBestEffort(
+  projectUrl,
+  projectId,
+  storageState,
+  options = {}
+) {
+  try {
+    const rows = await fetchAllPastProjectTaskHistory(
+      projectUrl,
+      projectId,
+      storageState,
+      options
+    );
+    return { rows, warning: null };
+  } catch (err) {
+    if (isAuthError(err)) throw err;
+    console.warn(`[past-history] ${err.message}`);
+    return {
+      rows: [],
+      warning:
+        "Could not load extra past-project task history. Showing tasks from the main list only.",
+    };
+  }
 }
 
 function pickFirstIsoLike(values) {
@@ -508,15 +545,19 @@ async function fetchDashboardForProject(projectInput, storageState, options = {}
   };
 
   let tasks = await fetchAllTasks(projectInput, storageState, options);
+  let historyWarning = null;
 
   if (isPastProjectUrl(projectUrl)) {
-    const historyRows = await fetchAllPastProjectTaskHistory(
+    const { rows: historyRows, warning } = await fetchPastProjectTaskHistoryBestEffort(
       projectUrl,
       projectId,
       storageState,
       options
     );
-    tasks = mergeClaimedTasksWithPastHistory(tasks, historyRows, projectId);
+    historyWarning = warning;
+    if (historyRows.length > 0) {
+      tasks = mergeClaimedTasksWithPastHistory(tasks, historyRows, projectId);
+    }
   }
 
   const normalizedTasks = tasks.map((task) => normalizeTask(task, project));
@@ -526,6 +567,7 @@ async function fetchDashboardForProject(projectInput, storageState, options = {}
     project,
     tasks: normalizedTasks,
     summary: { total: normalizedTasks.length },
+    ...(historyWarning ? { historyWarning } : {}),
   };
 }
 

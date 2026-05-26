@@ -236,6 +236,26 @@ test("mergeClaimedTasksWithPastHistory adds history-only task ids", () => {
   assert.equal(merged.find((t) => t.id === "t2").lastWorkedAt, "2026-05-02T00:00:00Z");
 });
 
+test("fetchDashboardForProject still loads when past history API fails", async () => {
+  const fetchPage = async (_url, _state, _limit, offset) => {
+    if (offset !== 0) return tasksPayload([]);
+    return tasksPayload(["t1", "t2"]);
+  };
+  const fetchHistoryPage = async () => {
+    throw new Error("Past project history API failed with status 404.");
+  };
+
+  const dashboard = await fetchDashboardForProject(PROJECT_URL, STORAGE, {
+    pageSize: 10,
+    fetchPage,
+    fetchHistoryPage,
+    project: { id: "p-1", name: "Project H" },
+  });
+
+  assert.equal(dashboard.tasks.length, 2);
+  assert.match(dashboard.historyWarning, /past-project task history/i);
+});
+
 test("fetchDashboardForProject merges past project history for past URLs", async () => {
   const fetchPage = async (_url, _state, _limit, offset) => {
     if (offset !== 0) return tasksPayload([]);

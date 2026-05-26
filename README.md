@@ -155,6 +155,10 @@ After the first refresh, this section shows what changed since your last refresh
 | **Save Login** says authentication failed | You are not fully signed in yet in the Chromium window. Finish Google OAuth and wait until the project page loads, then try **Save Login** again. |
 | Was signed in, now **Session expired** | Click **Log Out**, then **Login** and sign in again. |
 
+### Past project history warning
+
+If you see **“Could not load extra past-project task history”**, the main task list still loaded. Some accounts hit a 404 or permission error on the secondary history API — you are not fully signed out. Task counts may be slightly lower than the platform UI until that endpoint works for your account.
+
 ### Wrong project or empty tasks
 
 This repo loads tasks for **Project H** only (configured in `config.json`). If you are not on that project:

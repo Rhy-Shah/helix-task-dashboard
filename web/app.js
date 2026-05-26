@@ -945,8 +945,13 @@ async function fetchProject({ silent = false } = {}) {
     });
     state.dashboard = data;
     renderDashboard();
-    if (!silent) showMessage(`Fetched ${data.tasks.length} tasks.`);
-    else clearMessage();
+    if (data.historyWarning) {
+      showMessage(data.historyWarning);
+    } else if (!silent) {
+      showMessage(`Fetched ${data.tasks.length} tasks.`);
+    } else {
+      clearMessage();
+    }
   } finally {
     if (elements.loadingState) elements.loadingState.hidden = true;
     if (refreshButton && previousLabel !== null) {
