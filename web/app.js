@@ -511,6 +511,62 @@ function formatDate(value) {
   });
 }
 
+function formatRelativeUpdated(isoValue) {
+  if (!isoValue) return "Updated —";
+  const date = new Date(isoValue);
+  if (Number.isNaN(date.getTime())) return "Updated —";
+
+  const diffMs = Date.now() - date.getTime();
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  const week = 7 * day;
+  const month = 30 * day;
+
+  if (diffMs < minute) return "Updated just now";
+
+  if (diffMs < hour) {
+    const n = Math.floor(diffMs / minute);
+    return `Updated ${n} minute${n === 1 ? "" : "s"} ago`;
+  }
+
+  if (diffMs < day) {
+    const n = Math.floor(diffMs / hour);
+    return `Updated ${n} hour${n === 1 ? "" : "s"} ago`;
+  }
+
+  if (diffMs <= week) {
+    const n = Math.floor(diffMs / day);
+    return `Updated ${n} day${n === 1 ? "" : "s"} ago`;
+  }
+
+  if (diffMs < month) {
+    const n = Math.floor(diffMs / week);
+    return `Updated ${n} week${n === 1 ? "" : "s"} ago`;
+  }
+
+  const n = Math.floor(diffMs / month);
+  return `Updated ${n} month${n === 1 ? "" : "s"} ago`;
+}
+
+let generatedAtTicker = null;
+
+function renderGeneratedAt() {
+  if (!elements.generatedAt || !state.dashboard?.generatedAt) return;
+  elements.generatedAt.textContent = formatRelativeUpdated(state.dashboard.generatedAt);
+}
+
+function startGeneratedAtTicker() {
+  if (generatedAtTicker) clearInterval(generatedAtTicker);
+  generatedAtTicker = setInterval(renderGeneratedAt, 60_000);
+}
+
+function stopGeneratedAtTicker() {
+  if (!generatedAtTicker) return;
+  clearInterval(generatedAtTicker);
+  generatedAtTicker = null;
+}
+
 function renderTable() {
   const tasks = sortedTasks(filteredTasks());
   const total = state.dashboard?.tasks?.length || 0;
@@ -749,9 +805,8 @@ function renderActivity() {
 function renderDashboard() {
   elements.dashboard.hidden = false;
   if (elements.mastheadMeta) elements.mastheadMeta.hidden = false;
-  elements.generatedAt.textContent = `Updated ${new Date(
-    state.dashboard.generatedAt
-  ).toLocaleString()}`;
+  renderGeneratedAt();
+  startGeneratedAtTicker();
   state.quickFilter = null;
   state.sort = { column: "updatedAt", direction: "desc" };
   updateLatestActivity(state.dashboard.tasks || []);
@@ -862,6 +917,7 @@ async function logout() {
   state.activityFromThisRefresh = false;
   state.activityReady = false;
   clearActivityState();
+  stopGeneratedAtTicker();
   elements.dashboard.hidden = true;
   if (elements.mastheadMeta) elements.mastheadMeta.hidden = true;
   if (elements.loadingState) elements.loadingState.hidden = true;

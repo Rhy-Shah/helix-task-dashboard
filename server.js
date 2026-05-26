@@ -21,7 +21,6 @@ const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
-  ".svg": "image/svg+xml",
 };
 
 function parseCookies(header = "") {
@@ -249,8 +248,6 @@ function createLoginManager(options = {}) {
     const targetUrl = startUrl || getHelixProject().projectUrl;
     const targetOrigin = new URL(targetUrl).origin;
 
-    // Manual Save Login coexists with auto-capture; both paths read the same
-    // `flow.captured` flag and detach the same framenavigated handler.
     const flow = {
       browser,
       context,
@@ -413,7 +410,6 @@ function createAppServer(options = {}) {
           const profile = await api.fetchProfile(session.authState);
           sendJson(res, 200, {
             connected: true,
-            helixProject: getHelixProject(),
             profile: { name: profile.name || profile.fullName || "User" },
           });
         } catch {

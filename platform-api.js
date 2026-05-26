@@ -300,15 +300,12 @@ async function fetchDashboardForProject(projectInput, storageState, options = {}
   return {
     generatedAt: new Date().toISOString(),
     project,
-    ids: normalizedTasks.map((task) => task.id),
     tasks: normalizedTasks,
     summary: { total: normalizedTasks.length },
   };
 }
 
 module.exports = {
-  HANDSHAKE_ORIGIN,
-  PAGE_SIZE,
   buildTrpcUrl,
   fetchDashboardForProject,
   fetchProfile,
