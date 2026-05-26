@@ -44,7 +44,7 @@ const QUICK_FILTERS = {
   },
   other: {
     label: "Misc",
-    sub: "Invalid + Others",
+    sub: "Invalid + Failed + Others",
     accent: "amber",
     test: (task) =>
       !QUICK_FILTERS.delivered_ready.test(task) &&
