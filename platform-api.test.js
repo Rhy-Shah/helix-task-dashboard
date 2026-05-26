@@ -5,6 +5,8 @@ const {
   PAGE_SIZE,
   buildTrpcUrl,
   fetchAllTasks,
+  fetchDashboardForProject,
+  mergeClaimedTasksWithPastHistory,
   normalizeProjectInput,
   normalizeTask,
 } = require("./platform-api");
@@ -18,11 +20,29 @@ function tasksPayload(ids) {
   return [{ result: { data: { json: { activeTasks, pastTasks: [] } } } }];
 }
 
+function historyPayload(rows) {
+  return [{ result: { data: { json: { tasks: rows } } } }];
+}
+
 function mockFetchPage(pagesByOffset) {
   return async (_projectUrl, _storageState, _limit, offset) => {
     if (Object.hasOwn(pagesByOffset, offset)) return pagesByOffset[offset];
     const err = new Error("Tasks API failed with status 500.");
     throw err;
+  };
+}
+
+function mockFetchPageWithLimitRules(rules) {
+  return async (_projectUrl, _storageState, limit, offset) => {
+    for (const rule of rules) {
+      if (rule.offset !== offset) continue;
+      if (rule.limitMin !== undefined && limit < rule.limitMin) continue;
+      if (rule.limitMax !== undefined && limit > rule.limitMax) continue;
+      if (rule.limit !== undefined && limit !== rule.limit) continue;
+      if (rule.throw500) throw new Error("Tasks API failed with status 500.");
+      return rule.payload;
+    }
+    throw new Error(`unexpected offset ${offset} limit ${limit}`);
   };
 }
 
@@ -132,42 +152,112 @@ test("fetchAllTasks retries 500 on a full next page and returns all tasks", asyn
   );
 });
 
-test("fetchAllTasks treats 500 past the true end after retries and empty probe", async () => {
-  const calls = [];
-  const fetchPage = async (...args) => {
-    const offset = args[3];
-    calls.push(offset);
-    if (offset === 0) return tasksPayload(Array.from({ length: 10 }, (_, i) => `t${i}`));
-    if (offset === 20) return tasksPayload([]);
-    throw new Error("Tasks API failed with status 500.");
-  };
+test("fetchAllTasks halving recovers tail when full page 500s at offset 10", async () => {
+  const fetchPage = mockFetchPageWithLimitRules([
+    {
+      offset: 0,
+      limitMin: 10,
+      payload: tasksPayload(Array.from({ length: 10 }, (_, i) => `t${i}`)),
+    },
+    { offset: 10, limit: 10, throw500: true },
+    {
+      offset: 10,
+      limitMax: 5,
+      payload: tasksPayload(Array.from({ length: 5 }, (_, i) => `t${i + 10}`)),
+    },
+    { offset: 15, limitMin: 1, throw500: true },
+  ]);
 
   const tasks = await fetchAllTasks(PROJECT_URL, STORAGE, {
     pageSize: 10,
     fetchPage,
-    retryDelays: [0, 0],
+    retryDelays: [0, 0, 0],
   });
 
-  assert.equal(tasks.length, 10);
-  assert.ok(calls.filter((offset) => offset === 10).length >= 3);
-  assert.ok(calls.includes(20));
+  assert.equal(tasks.length, 15);
 });
 
-// Known limitation: if offset N permanently 500s while more tasks exist at N,
-// probing offset N+pageSize may also be empty (e.g. 18 tasks, page 2 stuck, probe 20 empty).
-test("fetchAllTasks may truncate when a middle page permanently 500s", async () => {
-  const fetchPage = mockFetchPage({
-    0: tasksPayload(Array.from({ length: 10 }, (_, i) => `t${i}`)),
-    20: tasksPayload([]),
-  });
+test("fetchAllTasks halving recovers 18 tasks when page 2 needs smaller limit", async () => {
+  const fetchPage = mockFetchPageWithLimitRules([
+    {
+      offset: 0,
+      limitMin: 10,
+      payload: tasksPayload(Array.from({ length: 10 }, (_, i) => `t${i}`)),
+    },
+    { offset: 10, limit: 10, throw500: true },
+    {
+      offset: 10,
+      limitMax: 5,
+      payload: tasksPayload(Array.from({ length: 8 }, (_, i) => `t${i + 10}`)),
+    },
+    { offset: 18, limitMin: 1, throw500: true },
+  ]);
 
   const tasks = await fetchAllTasks(PROJECT_URL, STORAGE, {
     pageSize: 10,
     fetchPage,
-    retryDelays: [0, 0],
+    retryDelays: [0, 0, 0],
+  });
+
+  assert.equal(tasks.length, 18);
+});
+
+test("fetchAllTasks stops at true end when limit 1 also 500s", async () => {
+  const fetchPage = mockFetchPageWithLimitRules([
+    {
+      offset: 0,
+      limitMin: 10,
+      payload: tasksPayload(Array.from({ length: 10 }, (_, i) => `t${i}`)),
+    },
+    { offset: 10, limitMin: 1, throw500: true },
+  ]);
+
+  const tasks = await fetchAllTasks(PROJECT_URL, STORAGE, {
+    pageSize: 10,
+    fetchPage,
+    retryDelays: [0, 0, 0],
   });
 
   assert.equal(tasks.length, 10);
+});
+
+test("mergeClaimedTasksWithPastHistory adds history-only task ids", () => {
+  const merged = mergeClaimedTasksWithPastHistory(
+    [{ id: "t1", title: "From list" }],
+    [
+      { taskId: "t1", lastWorkedAt: "2026-05-01T00:00:00Z" },
+      { taskId: "t2", lastWorkedAt: "2026-05-02T00:00:00Z" },
+    ],
+    "project-1"
+  );
+
+  assert.equal(merged.length, 2);
+  assert.equal(merged.find((t) => t.id === "t1").title, "From list");
+  assert.equal(merged.find((t) => t.id === "t2").lastWorkedAt, "2026-05-02T00:00:00Z");
+});
+
+test("fetchDashboardForProject merges past project history for past URLs", async () => {
+  const fetchPage = async (_url, _state, _limit, offset) => {
+    if (offset !== 0) return tasksPayload([]);
+    return tasksPayload(Array.from({ length: 10 }, (_, i) => `listed-${i}`));
+  };
+  const fetchHistoryPage = async (_url, _state, _limit, offset) => {
+    if (offset !== 0) return historyPayload([]);
+    return historyPayload([
+      { taskId: "listed-0", lastWorkedAt: "2026-05-01T00:00:00Z" },
+      { taskId: "history-only", lastWorkedAt: "2026-05-03T00:00:00Z" },
+    ]);
+  };
+
+  const dashboard = await fetchDashboardForProject(PROJECT_URL, STORAGE, {
+    pageSize: 10,
+    fetchPage,
+    fetchHistoryPage,
+    project: { id: "p-1", name: "Project H" },
+  });
+
+  assert.equal(dashboard.tasks.length, 11);
+  assert.ok(dashboard.tasks.some((t) => t.id === "history-only"));
 });
 
 test("fetchAllTasks rethrows 500 on the first page", async () => {

@@ -110,6 +110,27 @@ function buildTasksUrl(projectUrl, projectId, limit, offset) {
   return baseUrl.toString();
 }
 
+function buildPastTaskHistoryUrl(projectUrl, projectId, limit, offset) {
+  const baseUrl = new URL(
+    "/api/trpc/annotationProject.listPastProjectTaskHistoryForFellow",
+    projectUrl
+  );
+  const input = {
+    "0": {
+      json: {
+        annotationProjectId: projectId,
+        limit,
+        offset,
+      },
+      meta: { v: 1 },
+    },
+  };
+
+  baseUrl.searchParams.set("batch", "1");
+  baseUrl.searchParams.set("input", JSON.stringify(input));
+  return baseUrl.toString();
+}
+
 function extractTrpcJson(payload, procedure) {
   const entry = payload?.[0];
   if (entry?.error) {
@@ -129,6 +150,54 @@ function extractTasks(apiPayload) {
     ...(Array.isArray(data.activeTasks) ? data.activeTasks : []),
     ...(Array.isArray(data.pastTasks) ? data.pastTasks : []),
   ];
+}
+
+function extractPastHistoryTasks(apiPayload) {
+  const data = apiPayload?.[0]?.result?.data?.json;
+  if (!data) {
+    throw new Error("Unexpected past project history response shape.");
+  }
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data.tasks)) return data.tasks;
+  if (Array.isArray(data.taskHistory)) return data.taskHistory;
+  if (Array.isArray(data.history)) return data.history;
+  return [];
+}
+
+function isPastProjectUrl(projectUrl) {
+  return /\/fellow\/projects\/past\//i.test(projectUrl);
+}
+
+function historyRowToRawTask(row, projectId) {
+  const id = row.taskId ?? row.id ?? row.task?.id;
+  if (!id) return null;
+
+  return {
+    id,
+    annotationProjectId: projectId,
+    title: row.title || row.task?.title || "",
+    pipelineStage: row.pipelineStage || row.task?.pipelineStage,
+    buildStatus: row.buildStatus ?? row.task?.buildStatus ?? null,
+    data: row.data || row.task?.data,
+    lastWorkedAt: row.lastWorkedAt ?? row.last_worked_at,
+    updatedAt: row.lastWorkedAt ?? row.last_worked_at ?? row.updatedAt,
+  };
+}
+
+function mergeClaimedTasksWithPastHistory(claimedTasks, historyRows, projectId) {
+  const byId = new Map();
+
+  for (const task of claimedTasks) {
+    if (task?.id) byId.set(task.id, task);
+  }
+
+  for (const row of historyRows) {
+    const stub = historyRowToRawTask(row, projectId);
+    if (!stub || byId.has(stub.id)) continue;
+    byId.set(stub.id, stub);
+  }
+
+  return [...byId.values()];
 }
 
 async function fetchTrpc(procedure, input, storageState, options = {}) {
@@ -211,6 +280,35 @@ async function fetchTasksPage(projectUrl, storageState, limit, offset) {
   return response.json();
 }
 
+async function fetchPastProjectTaskHistoryPage(projectUrl, storageState, limit, offset) {
+  const projectId = getProjectId(projectUrl);
+  const apiUrl = buildPastTaskHistoryUrl(projectUrl, projectId, limit, offset);
+  const cookieHeader = createCookieHeader(storageState, apiUrl);
+
+  if (!cookieHeader) {
+    throw new Error("Session is not connected.");
+  }
+
+  const response = await fetch(apiUrl, {
+    headers: {
+      Accept: "application/json, text/plain, */*",
+      Cookie: cookieHeader,
+      Referer: projectUrl,
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/147.0.0.0 Safari/537.36",
+    },
+  });
+
+  if (response.status === 401 || response.status === 403) {
+    throw new Error("Login expired. Sign in again.");
+  }
+  if (!response.ok) {
+    throw new Error(`Past project history API failed with status ${response.status}.`);
+  }
+
+  return response.json();
+}
+
 function pickFirstIsoLike(values) {
   for (const value of values) {
     if (typeof value === "string" && value.length >= 8) return value;
@@ -240,6 +338,8 @@ function normalizeTask(task, project = {}) {
       task.lastStatusChangeAt,
       task.lastActionAt,
       task.last_action_at,
+      task.lastWorkedAt,
+      task.last_worked_at,
       task.updatedAt,
       task.updated_at,
       task.modifiedAt,
@@ -258,7 +358,7 @@ async function fetchProfile(storageState, options = {}) {
 }
 
 function isTasksPage500(err) {
-  return err?.message?.includes("status 500");
+  return /status 500/.test(err?.message || "");
 }
 
 const TASKS_PAGE_RETRY_ATTEMPTS = 3;
@@ -291,74 +391,134 @@ async function fetchTasksPageWithRetries(
   throw lastError;
 }
 
-async function fetchAllTasks(projectInput, storageState, options = {}) {
-  const { projectUrl } = normalizeProjectInput(projectInput);
-  const pageSize = options.pageSize ?? PAGE_SIZE;
-  const fetchPage = options.fetchPage || fetchTasksPage;
-  const retryDelays = options.retryDelays ?? TASKS_PAGE_RETRY_DELAYS_MS;
-  const tasks = [];
-  let lastPageWasFull = false;
+async function fetchPageAdaptive(
+  fetchPage,
+  extractPage,
+  projectUrl,
+  storageState,
+  offset,
+  preferredLimit,
+  retryDelays
+) {
+  let limit = preferredLimit;
 
-  for (let offset = 0; ; offset += pageSize) {
-    let payload;
+  while (limit >= 1) {
     try {
-      payload = await fetchTasksPageWithRetries(
+      const payload = await fetchTasksPageWithRetries(
         fetchPage,
         projectUrl,
         storageState,
-        pageSize,
+        limit,
         offset,
         retryDelays
       );
+      const tasks = extractPage(payload);
+      return { tasks, limitUsed: limit };
     } catch (err) {
-      if (offset === 0 || !isTasksPage500(err)) throw err;
-
-      // A full previous page means more tasks may exist; do not stop on 500 alone.
-      if (!lastPageWasFull) break;
-
-      // Past the true end the API often returns 500 instead of an empty page. After
-      // retries, probe one page ahead — empty probe usually means end-of-list, but if
-      // this page permanently 500s while tasks remain at this offset, we may truncate.
-      let probeTasks = [];
-      try {
-        const probePayload = await fetchPage(
-          projectUrl,
-          storageState,
-          pageSize,
-          offset + pageSize
-        );
-        probeTasks = extractTasks(probePayload);
-      } catch (probeErr) {
-        if (!isTasksPage500(probeErr)) throw probeErr;
-        break;
+      if (!isTasksPage500(err)) throw err;
+      if (limit === 1) {
+        if (offset === 0) throw err;
+        return { tasks: [], limitUsed: 0 };
       }
+      const halved = Math.floor(limit / 2);
+      limit = halved >= 1 ? halved : 1;
+    }
+  }
 
-      if (probeTasks.length > 0) {
-        throw new Error(
-          `Tasks pagination incomplete at offset ${offset}: page failed with status 500 after ${TASKS_PAGE_RETRY_ATTEMPTS} retries but offset ${offset + pageSize} returned ${probeTasks.length} tasks.`
-        );
-      }
+  if (offset === 0) {
+    throw new Error("Tasks API failed with status 500.");
+  }
+  return { tasks: [], limitUsed: 0 };
+}
 
+async function fetchAllPaginated(
+  projectUrl,
+  storageState,
+  { pageSize, fetchPage, extractPage, retryDelays }
+) {
+  const tasks = [];
+  let offset = 0;
+  const maxPages = 5000;
+  let finished = false;
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const { tasks: pageTasks, limitUsed } = await fetchPageAdaptive(
+      fetchPage,
+      extractPage,
+      projectUrl,
+      storageState,
+      offset,
+      pageSize,
+      retryDelays
+    );
+
+    if (pageTasks.length === 0) {
+      finished = true;
       break;
     }
 
-    const pageTasks = extractTasks(payload);
-    if (pageTasks.length === 0) break;
-
     tasks.push(...pageTasks);
-    lastPageWasFull = pageTasks.length === pageSize;
-    if (pageTasks.length < pageSize) break;
+    offset += pageTasks.length;
+
+    if (pageTasks.length < limitUsed) {
+      finished = true;
+      break;
+    }
+  }
+
+  if (!finished) {
+    throw new Error("Task pagination exceeded safe page limit.");
   }
 
   return tasks;
 }
 
+async function fetchAllTasks(projectInput, storageState, options = {}) {
+  const { projectUrl } = normalizeProjectInput(projectInput);
+  const pageSize = options.pageSize ?? PAGE_SIZE;
+  const fetchPage = options.fetchPage || fetchTasksPage;
+  const retryDelays = options.retryDelays ?? TASKS_PAGE_RETRY_DELAYS_MS;
+
+  return fetchAllPaginated(projectUrl, storageState, {
+    pageSize,
+    fetchPage,
+    extractPage: extractTasks,
+    retryDelays,
+  });
+}
+
+async function fetchAllPastProjectTaskHistory(projectUrl, projectId, storageState, options = {}) {
+  const pageSize = options.pageSize ?? PAGE_SIZE;
+  const fetchPage = options.fetchHistoryPage || fetchPastProjectTaskHistoryPage;
+  const retryDelays = options.retryDelays ?? TASKS_PAGE_RETRY_DELAYS_MS;
+
+  return fetchAllPaginated(projectUrl, storageState, {
+    pageSize,
+    fetchPage,
+    extractPage: extractPastHistoryTasks,
+    retryDelays,
+  });
+}
+
 async function fetchDashboardForProject(projectInput, storageState, options = {}) {
-  const tasks = await fetchAllTasks(projectInput, storageState, options);
+  const { projectUrl, projectId } = normalizeProjectInput(projectInput);
   const project = options.project || {
-    id: normalizeProjectInput(projectInput).projectId,
+    id: projectId,
     name: "Project",
   };
+
+  let tasks = await fetchAllTasks(projectInput, storageState, options);
+
+  if (isPastProjectUrl(projectUrl)) {
+    const historyRows = await fetchAllPastProjectTaskHistory(
+      projectUrl,
+      projectId,
+      storageState,
+      options
+    );
+    tasks = mergeClaimedTasksWithPastHistory(tasks, historyRows, projectId);
+  }
+
   const normalizedTasks = tasks.map((task) => normalizeTask(task, project));
 
   return {
@@ -372,10 +532,13 @@ async function fetchDashboardForProject(projectInput, storageState, options = {}
 module.exports = {
   PAGE_SIZE,
   buildTrpcUrl,
+  extractPastHistoryTasks,
   extractTasks,
   fetchAllTasks,
   fetchDashboardForProject,
   fetchProfile,
+  isPastProjectUrl,
+  mergeClaimedTasksWithPastHistory,
   normalizeProjectInput,
   normalizeTask,
 };
