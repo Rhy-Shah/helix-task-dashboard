@@ -1,3 +1,4 @@
 auth.json
 config.json
+.playwright-login-profile/
 node_modules/

@@ -10,7 +10,14 @@ const SESSION_COOKIE = "hai_session";
 const WEB_DIR = path.join(__dirname, "web");
 const CONFIG_PATH = path.join(__dirname, "config.json");
 const AUTH_PATH = path.join(__dirname, "auth.json");
+const LOGIN_PROFILE_DIR = path.join(__dirname, ".playwright-login-profile");
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+const LOGIN_LAUNCH_OPTS = {
+  headless: false,
+  ignoreDefaultArgs: ["--enable-automation"],
+  args: ["--disable-blink-features=AutomationControlled"],
+};
 
 const SESSION_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
 const SESSION_COOKIE_MAX_AGE = 30 * 24 * 60 * 60;
@@ -226,15 +233,54 @@ function getHelixProject() {
   };
 }
 
-async function launchLoginBrowser(chromium, log = console.log) {
+async function launchLoginSession(chromium, log = console.log) {
+  if (typeof chromium.launchPersistentContext === "function") {
+    try {
+      const context = await chromium.launchPersistentContext(LOGIN_PROFILE_DIR, {
+        ...LOGIN_LAUNCH_OPTS,
+        channel: "chrome",
+      });
+      log("[login] Using Google Chrome (persistent profile)");
+      return { context, browser: null };
+    } catch {
+      try {
+        const context = await chromium.launchPersistentContext(LOGIN_PROFILE_DIR, {
+          ...LOGIN_LAUNCH_OPTS,
+        });
+        log("[login] Using Playwright Chromium (persistent profile)");
+        return { context, browser: null };
+      } catch {
+        // fall through to ephemeral launch
+      }
+    }
+  }
+
   try {
-    const browser = await chromium.launch({ headless: false, channel: "chrome" });
+    const browser = await chromium.launch({
+      ...LOGIN_LAUNCH_OPTS,
+      channel: "chrome",
+    });
     log("[login] Using Google Chrome");
-    return browser;
+    return { context: await browser.newContext(), browser };
   } catch {
     log("[login] Google Chrome not available, using Playwright Chromium");
-    return chromium.launch({ headless: false });
+    const browser = await chromium.launch({ ...LOGIN_LAUNCH_OPTS });
+    return { context: await browser.newContext(), browser };
   }
+}
+
+async function closeLoginSession(session) {
+  if (session.browser) {
+    await session.browser.close().catch(() => {});
+    return;
+  }
+  await session.context.close().catch(() => {});
+}
+
+/** @deprecated Use launchLoginSession */
+async function launchLoginBrowser(chromium, log) {
+  const session = await launchLoginSession(chromium, log);
+  return session.browser || session.context;
 }
 
 function createLoginManager(options = {}) {
@@ -253,13 +299,14 @@ function createLoginManager(options = {}) {
       );
     }
 
-    const browser = await launchLoginBrowser(chromium);
-    const context = await browser.newContext();
-    const page = await context.newPage();
+    const loginSession = await launchLoginSession(chromium);
+    const { context, browser } = loginSession;
+    const page = context.pages()[0] || (await context.newPage());
     const targetUrl = startUrl || getHelixProject().projectUrl;
     const targetOrigin = new URL(targetUrl).origin;
 
     const flow = {
+      loginSession,
       browser,
       context,
       page,
@@ -298,7 +345,7 @@ function createLoginManager(options = {}) {
         } catch (err) {
           console.warn(`[login] onAuthCaptured failed: ${err.message}`);
         }
-        await browser.close().catch(() => {});
+        await closeLoginSession(loginSession);
         flows.delete(sessionId);
       } catch {
         // browser or page closed mid-check
@@ -311,10 +358,12 @@ function createLoginManager(options = {}) {
       if (frame === page.mainFrame()) tryCapture();
     };
     page.on("framenavigated", flow.onFrameNavigated);
-    browser.on("disconnected", () => {
+    const onLoginWindowClosed = () => {
       if (flow.pollHandle) clearInterval(flow.pollHandle);
       flows.delete(sessionId);
-    });
+    };
+    if (browser) browser.on("disconnected", onLoginWindowClosed);
+    else context.on("close", onLoginWindowClosed);
 
     await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
 
@@ -332,7 +381,7 @@ function createLoginManager(options = {}) {
       flow.page.off("framenavigated", flow.onFrameNavigated);
       flow.onFrameNavigated = null;
     }
-    await flow.browser.close().catch(() => {});
+    await closeLoginSession(flow.loginSession);
     flows.delete(sessionId);
   }
 
@@ -355,7 +404,7 @@ function createLoginManager(options = {}) {
     }
     const authState = await flow.context.storageState();
     flow.capturedState = authState;
-    await flow.browser.close().catch(() => {});
+    await closeLoginSession(flow.loginSession);
     flows.delete(sessionId);
     return authState;
   }
@@ -533,6 +582,8 @@ module.exports = {
   createSessionId,
   createSessionStore,
   getHelixProject,
+  closeLoginSession,
   launchLoginBrowser,
+  launchLoginSession,
   parseCookies,
 };

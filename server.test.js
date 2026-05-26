@@ -6,44 +6,52 @@ const {
   createSessionId,
   createSessionStore,
   getHelixProject,
-  launchLoginBrowser,
+  launchLoginSession,
   parseCookies,
 } = require("./server");
 
-test("launchLoginBrowser prefers installed Chrome", async () => {
-  const launches = [];
+test("launchLoginSession prefers Chrome persistent profile", async () => {
+  const persistent = [];
   const mockChromium = {
-    launch: async (opts) => {
-      launches.push(opts);
-      if (opts.channel === "chrome") return { kind: "chrome" };
-      throw new Error("unexpected chromium launch");
+    launchPersistentContext: async (_dir, opts) => {
+      persistent.push(opts);
+      if (opts.channel === "chrome") {
+        return { pages: () => [], newPage: async () => ({}) };
+      }
+      throw new Error("Chrome not installed");
+    },
+    launch: async () => {
+      throw new Error("should not use ephemeral launch");
     },
   };
   const logs = [];
-  const browser = await launchLoginBrowser(mockChromium, (msg) => logs.push(msg));
+  const session = await launchLoginSession(mockChromium, (msg) => logs.push(msg));
 
-  assert.equal(browser.kind, "chrome");
-  assert.equal(launches.length, 1);
-  assert.equal(launches[0].channel, "chrome");
-  assert.ok(logs.some((line) => line.includes("Google Chrome")));
+  assert.equal(persistent.length, 1);
+  assert.equal(persistent[0].channel, "chrome");
+  assert.equal(session.browser, null);
+  assert.ok(logs.some((line) => line.includes("persistent profile")));
 });
 
-test("launchLoginBrowser falls back to Playwright Chromium", async () => {
+test("launchLoginSession falls back to ephemeral Chromium", async () => {
   const launches = [];
   const mockChromium = {
+    launchPersistentContext: async () => {
+      throw new Error("persistent launch failed");
+    },
     launch: async (opts) => {
       launches.push(opts);
       if (opts.channel === "chrome") throw new Error("Chrome not installed");
-      return { kind: "chromium" };
+      return {
+        newContext: async () => ({ pages: () => [], newPage: async () => ({}) }),
+      };
     },
   };
   const logs = [];
-  const browser = await launchLoginBrowser(mockChromium, (msg) => logs.push(msg));
+  const session = await launchLoginSession(mockChromium, (msg) => logs.push(msg));
 
-  assert.equal(browser.kind, "chromium");
+  assert.ok(session.browser);
   assert.equal(launches.length, 2);
-  assert.equal(launches[0].channel, "chrome");
-  assert.equal(launches[1].channel, undefined);
   assert.ok(logs.some((line) => line.includes("Playwright Chromium")));
 });
 
