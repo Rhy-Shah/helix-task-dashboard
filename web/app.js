@@ -15,7 +15,7 @@ const state = {
 
 const QUICK_FILTERS = {
   delivered_ready: {
-    label: "Delivered & Ready",
+    label: "Accepted",
     sub: "Delivered + Ready to Deliver",
     accent: "green",
     test: (task) => {
@@ -34,7 +34,7 @@ const QUICK_FILTERS = {
     },
   },
   pass_at: {
-    label: "Pass@",
+    label: "In evaluation",
     sub: "Pass@n + Pass@0 + Submitted",
     accent: "violet",
     test: (task) => {
