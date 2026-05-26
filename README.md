@@ -147,9 +147,9 @@ After the first refresh, this section shows what changed since your last refresh
 | Problem | What to do |
 | --- | --- |
 | Clicked **Login** but nothing opens | Run `npm start` from a normal terminal. Re-run `npx playwright install chromium`. |
-| Google says **“This browser or app may not be secure”** | Google blocks many automated browsers. On **Login**, the app opens **installed Google Chrome** with a saved local profile (terminal: `[login] Using Google Chrome (persistent profile)`). Install [Google Chrome](https://www.google.com/chrome/), sign in in **that** window—not on localhost—then **Save Login** if tasks do not load. If it still fails: quit Chrome completely, delete `~/.project-h-task-dashboard/login-profile` (Mac/Linux) or `%USERPROFILE%\.project-h-task-dashboard\login-profile` (Windows), run `npm start` again, and retry. Try **non-Google SSO** on the platform if your account has it. Some Google accounts block automation entirely—there is no guaranteed fix. |
-| Google sign-in fails or loops in the login window | Complete OAuth **inside the window opened by Login**, not on localhost. After you see your project/tasks there, use **Save Login** on the dashboard if the window does not close on its own. |
-| Signed in on the platform in Chrome, but dashboard says **Not signed in** | That session is in a different browser. Use **Login** on the dashboard so the Playwright window captures cookies. |
+| Google says **“This browser or app may not be secure”** | Google often blocks sign-in in Playwright Chromium. Sign in in **that** window—not on localhost—then **Save Login** if tasks do not load. Try **non-Google SSO** on the platform if your account offers it. |
+| Google sign-in fails or loops in the login window | Complete OAuth **inside the Chromium window opened by Login**, not on localhost. After you see your project/tasks there, use **Save Login** on the dashboard if the window does not close on its own. |
+| Signed in on the platform in your normal browser, but dashboard says **Not signed in** | That session is in a different browser. Use **Login** on the dashboard so the Chromium window captures cookies. |
 | Chromium closes before you finish SSO | Click **Login** again and complete the full flow. |
 | Window stays open after Google login | When you see your project/tasks in that window, click **Save Login** on the dashboard. |
 | **Save Login** says authentication failed | You are not fully signed in yet in the Chromium window. Finish Google OAuth and wait until the project page loads, then try **Save Login** again. |
