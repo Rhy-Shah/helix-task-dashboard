@@ -20,6 +20,10 @@ function tasksPayload(ids) {
   return [{ result: { data: { json: { activeTasks, pastTasks: [] } } } }];
 }
 
+function richTasksPayload(tasks) {
+  return [{ result: { data: { json: { activeTasks: tasks, pastTasks: [] } } } }];
+}
+
 function historyPayload(rows) {
   return [{ result: { data: { json: { tasks: rows } } } }];
 }
@@ -264,14 +268,16 @@ test("fetchDashboardForProject still loads when past history API fails", async (
     if (offset !== 0) return tasksPayload([]);
     return tasksPayload(["t1", "t2"]);
   };
-  const fetchHistoryPage = async () => {
-    throw new Error("Past project history API failed with status 404.");
+  const fetchProfile = async () => ({ id: "profile-1" });
+  const fetchTrpc = async () => {
+    throw new Error("Past project history API failed with status 400.");
   };
 
   const dashboard = await fetchDashboardForProject(PROJECT_URL, STORAGE, {
     pageSize: 10,
     fetchPage,
-    fetchHistoryPage,
+    fetchProfile,
+    fetchTrpc,
     project: { id: "p-1", name: "Project H" },
   });
 
@@ -284,23 +290,80 @@ test("fetchDashboardForProject merges past project history for past URLs", async
     if (offset !== 0) return tasksPayload([]);
     return tasksPayload(Array.from({ length: 10 }, (_, i) => `listed-${i}`));
   };
-  const fetchHistoryPage = async (_url, _state, _limit, offset) => {
-    if (offset !== 0) return historyPayload([]);
-    return historyPayload([
-      { taskId: "listed-0", lastWorkedAt: "2026-05-01T00:00:00Z" },
-      { taskId: "history-only", lastWorkedAt: "2026-05-03T00:00:00Z" },
-    ]);
+  const fetchProfile = async () => ({ id: "profile-1" });
+  const fetchTrpc = async (procedure, input) => {
+    assert.equal(procedure, "annotationProject.listPastProjectTaskHistoryForFellow");
+    assert.deepEqual(input, {
+      projectId: "26a53071-8843-4138-97df-430bd3e4cd45",
+      profileId: "profile-1",
+    });
+    return {
+      tasks: [
+        { taskId: "listed-0", lastWorkedAt: "2026-05-01T00:00:00Z" },
+        { taskId: "history-only", lastWorkedAt: "2026-05-03T00:00:00Z" },
+      ],
+    };
   };
 
   const dashboard = await fetchDashboardForProject(PROJECT_URL, STORAGE, {
     pageSize: 10,
     fetchPage,
-    fetchHistoryPage,
-    project: { id: "p-1", name: "Project H" },
+    fetchProfile,
+    fetchTrpc,
+    project: { id: "26a53071-8843-4138-97df-430bd3e4cd45", name: "Project H" },
   });
 
   assert.equal(dashboard.tasks.length, 11);
   assert.ok(dashboard.tasks.some((t) => t.id === "history-only"));
+});
+
+test("fetchDashboardForProject returns 18 rows with pr titles and history-only stubs", async () => {
+  const mainTasks = Array.from({ length: 15 }, (_, i) => ({
+    id: `listed-${i}`,
+    pipelineStage: { name: "Delivered" },
+    buildStatus: "passing",
+    data: { pr_title: `PR ${i}` },
+  }));
+
+  const fetchPage = async (_url, _state, _limit, offset) => {
+    if (offset !== 0) return tasksPayload([]);
+    return richTasksPayload(mainTasks);
+  };
+
+  const fetchProfile = async () => ({ id: "profile-1" });
+  const fetchTrpc = async (procedure, input) => {
+    assert.equal(procedure, "annotationProject.listPastProjectTaskHistoryForFellow");
+    assert.deepEqual(input, {
+      projectId: "26a53071-8843-4138-97df-430bd3e4cd45",
+      profileId: "profile-1",
+    });
+    return {
+      tasks: [
+        ...Array.from({ length: 15 }, (_, i) => ({
+          taskId: `listed-${i}`,
+          lastWorkedAt: `2026-05-${String(i + 1).padStart(2, "0")}T00:00:00Z`,
+          totalTimeWorkedInSeconds: 60,
+        })),
+        { taskId: "hist-15", lastWorkedAt: "2026-05-16T00:00:00Z" },
+        { taskId: "hist-16", lastWorkedAt: "2026-05-17T00:00:00Z" },
+        { taskId: "hist-17", lastWorkedAt: "2026-05-18T00:00:00Z" },
+      ],
+    };
+  };
+
+  const dashboard = await fetchDashboardForProject(PROJECT_URL, STORAGE, {
+    pageSize: 10,
+    fetchPage,
+    fetchProfile,
+    fetchTrpc,
+    project: { id: "26a53071-8843-4138-97df-430bd3e4cd45", name: "Project H" },
+  });
+
+  assert.equal(dashboard.tasks.length, 18);
+  assert.equal(dashboard.tasks.find((t) => t.id === "listed-3").title, "PR 3");
+  assert.equal(dashboard.tasks.find((t) => t.id === "hist-15").title, "");
+  assert.equal(dashboard.tasks.find((t) => t.id === "hist-15").updatedAt, "2026-05-16T00:00:00Z");
+  assert.equal(dashboard.tasks.find((t) => t.id === "listed-0").stage, "Delivered");
 });
 
 test("fetchAllTasks rethrows 500 on the first page", async () => {
@@ -334,4 +397,17 @@ test("normalizeTask extracts stage, title, and updatedAt", () => {
     title: "Finish thing",
     updatedAt: "2026-05-22T10:00:00Z",
   });
+});
+
+test("normalizeTask uses pr_title when task_title is missing", () => {
+  const task = normalizeTask(
+    {
+      id: "t-2",
+      pipelineStage: { name: "Review" },
+      data: { pr_title: "Fix login bug" },
+    },
+    { id: "p-1", name: "Project H" }
+  );
+
+  assert.equal(task.title, "Fix login bug");
 });

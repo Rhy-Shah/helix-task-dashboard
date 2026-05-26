@@ -110,25 +110,8 @@ function buildTasksUrl(projectUrl, projectId, limit, offset) {
   return baseUrl.toString();
 }
 
-function buildPastTaskHistoryUrl(projectUrl, projectId, limit, offset) {
-  const baseUrl = new URL(
-    "/api/trpc/annotationProject.listPastProjectTaskHistoryForFellow",
-    projectUrl
-  );
-  const input = {
-    "0": {
-      json: {
-        annotationProjectId: projectId,
-        limit,
-        offset,
-      },
-      meta: { v: 1 },
-    },
-  };
-
-  baseUrl.searchParams.set("batch", "1");
-  baseUrl.searchParams.set("input", JSON.stringify(input));
-  return baseUrl.toString();
+function pastProjectHistoryInput(projectId, profileId) {
+  return { projectId, profileId };
 }
 
 function extractTrpcJson(payload, procedure) {
@@ -152,6 +135,12 @@ function extractTasks(apiPayload) {
   ];
 }
 
+function extractPastHistoryTasksFromJson(data) {
+  if (!data) return [];
+  if (Array.isArray(data.tasks)) return data.tasks;
+  return [];
+}
+
 function extractPastHistoryTasks(apiPayload) {
   const entry = apiPayload?.[0];
   if (entry?.error) {
@@ -160,14 +149,7 @@ function extractPastHistoryTasks(apiPayload) {
     );
   }
 
-  const data = entry?.result?.data?.json;
-  if (!data) return [];
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data.tasks)) return data.tasks;
-  if (Array.isArray(data.taskHistory)) return data.taskHistory;
-  if (Array.isArray(data.history)) return data.history;
-  if (Array.isArray(data.items)) return data.items;
-  return [];
+  return extractPastHistoryTasksFromJson(entry?.result?.data?.json);
 }
 
 function isAuthError(err) {
@@ -290,35 +272,29 @@ async function fetchTasksPage(projectUrl, storageState, limit, offset) {
   return response.json();
 }
 
-async function fetchPastProjectTaskHistoryPage(projectUrl, storageState, limit, offset) {
-  const projectId = getProjectId(projectUrl);
-  const apiUrl = buildPastTaskHistoryUrl(projectUrl, projectId, limit, offset);
-  const cookieHeader = createCookieHeader(storageState, apiUrl);
+async function fetchPastProjectTaskHistory(
+  projectUrl,
+  projectId,
+  storageState,
+  options = {}
+) {
+  const fetchProfileImpl = options.fetchProfile || fetchProfile;
+  const fetchTrpcImpl = options.fetchTrpc || fetchTrpc;
 
-  if (!cookieHeader) {
-    throw new Error("Session is not connected.");
+  const profile = await fetchProfileImpl(storageState, options);
+  const profileId = profile?.id;
+  if (!profileId) {
+    throw new Error("Could not resolve profile id for past project history.");
   }
 
-  const response = await fetch(apiUrl, {
-    headers: {
-      Accept: "application/json, text/plain, */*",
-      Cookie: cookieHeader,
-      Referer: projectUrl,
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/147.0.0.0 Safari/537.36",
-    },
-  });
+  const data = await fetchTrpcImpl(
+    "annotationProject.listPastProjectTaskHistoryForFellow",
+    pastProjectHistoryInput(projectId, profileId),
+    storageState,
+    { ...options, referer: projectUrl }
+  );
 
-  const payload = await response.json();
-
-  if (response.status === 401 || response.status === 403) {
-    throw new Error("Login expired. Sign in again.");
-  }
-  if (!response.ok) {
-    throw new Error(`Past project history API failed with status ${response.status}.`);
-  }
-
-  return payload;
+  return extractPastHistoryTasksFromJson(data);
 }
 
 async function fetchPastProjectTaskHistoryBestEffort(
@@ -328,7 +304,7 @@ async function fetchPastProjectTaskHistoryBestEffort(
   options = {}
 ) {
   try {
-    const rows = await fetchAllPastProjectTaskHistory(
+    const rows = await fetchPastProjectTaskHistory(
       projectUrl,
       projectId,
       storageState,
@@ -368,7 +344,7 @@ function normalizeTask(task, project = {}) {
       task.pipelineStage?.name ||
       "No stage found",
     buildStatus: task.buildStatus ?? null,
-    title: data.task_title || task.title || "",
+    title: data.task_title || data.pr_title || task.title || "",
     updatedAt: pickFirstIsoLike([
       task.statusUpdatedAt,
       task.status_updated_at,
@@ -533,19 +509,6 @@ async function fetchAllTasks(projectInput, storageState, options = {}) {
   });
 }
 
-async function fetchAllPastProjectTaskHistory(projectUrl, projectId, storageState, options = {}) {
-  const pageSize = options.pageSize ?? PAGE_SIZE;
-  const fetchPage = options.fetchHistoryPage || fetchPastProjectTaskHistoryPage;
-  const retryDelays = options.retryDelays ?? TASKS_PAGE_RETRY_DELAYS_MS;
-
-  return fetchAllPaginated(projectUrl, storageState, {
-    pageSize,
-    fetchPage,
-    extractPage: extractPastHistoryTasks,
-    retryDelays,
-  });
-}
-
 async function fetchDashboardForProject(projectInput, storageState, options = {}) {
   const { projectUrl, projectId } = normalizeProjectInput(projectInput);
   const project = options.project || {
@@ -584,12 +547,15 @@ module.exports = {
   PAGE_SIZE,
   buildTrpcUrl,
   extractPastHistoryTasks,
+  extractPastHistoryTasksFromJson,
   extractTasks,
   fetchAllTasks,
   fetchDashboardForProject,
+  fetchPastProjectTaskHistory,
   fetchProfile,
   isPastProjectUrl,
   mergeClaimedTasksWithPastHistory,
   normalizeProjectInput,
   normalizeTask,
+  pastProjectHistoryInput,
 };
