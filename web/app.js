@@ -84,6 +84,7 @@ const elements = {
   message: document.querySelector("#message"),
   messageText: document.querySelector("#message-text"),
   messageDismiss: document.querySelector("#message-dismiss"),
+  loginGoogleHint: document.querySelector("#login-google-hint"),
   loadingState: document.querySelector("#loading-state"),
   dashboard: document.querySelector("#dashboard"),
   mastheadMeta: document.querySelector("#masthead-meta"),
@@ -270,6 +271,9 @@ function renderConnection(profile) {
     elements.connectButton.hidden = false;
     elements.saveLoginButton.hidden = true;
     elements.logoutButton.hidden = true;
+  }
+  if (elements.loginGoogleHint) {
+    elements.loginGoogleHint.hidden = state.connected;
   }
   applyBranding(state.connected);
 }
