@@ -1,6 +1,6 @@
 const HANDSHAKE_ORIGIN = "https://ai.joinhandshake.com";
 const DEFAULT_REFERER = `${HANDSHAKE_ORIGIN}/fellow/projects`;
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -257,9 +257,13 @@ async function fetchProfile(storageState, options = {}) {
   return data.profile;
 }
 
+function isTasksPage500(err) {
+  return err?.message?.includes("status 500");
+}
+
 async function fetchAllTasks(projectInput, storageState, options = {}) {
   const { projectUrl } = normalizeProjectInput(projectInput);
-  const pageSize = options.pageSize || PAGE_SIZE;
+  const pageSize = options.pageSize ?? PAGE_SIZE;
   const fetchPage = options.fetchPage || fetchTasksPage;
   const tasks = [];
 
@@ -268,20 +272,14 @@ async function fetchAllTasks(projectInput, storageState, options = {}) {
     try {
       payload = await fetchPage(projectUrl, storageState, pageSize, offset);
     } catch (err) {
-      // Handshake returns 500 on the empty page past the last result. If the
-      // next page also has zero tasks, treat the 500 as end-of-results.
-      if (offset === 0 || !err.message.includes("status 500")) throw err;
-      const nextPayload = await fetchPage(
-        projectUrl,
-        storageState,
-        pageSize,
-        offset + pageSize
-      );
-      if (extractTasks(nextPayload).length === 0) break;
+      // Past the last page the API often returns 500 instead of an empty list.
+      if (offset > 0 && isTasksPage500(err)) break;
       throw err;
     }
 
     const pageTasks = extractTasks(payload);
+    if (pageTasks.length === 0) break;
+
     tasks.push(...pageTasks);
     if (pageTasks.length < pageSize) break;
   }
@@ -306,7 +304,10 @@ async function fetchDashboardForProject(projectInput, storageState, options = {}
 }
 
 module.exports = {
+  PAGE_SIZE,
   buildTrpcUrl,
+  extractTasks,
+  fetchAllTasks,
   fetchDashboardForProject,
   fetchProfile,
   normalizeProjectInput,

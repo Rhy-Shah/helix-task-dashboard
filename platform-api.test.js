@@ -2,10 +2,29 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  PAGE_SIZE,
   buildTrpcUrl,
+  fetchAllTasks,
   normalizeProjectInput,
   normalizeTask,
 } = require("./platform-api");
+
+const PROJECT_URL =
+  "https://ai.joinhandshake.com/fellow/projects/past/26a53071-8843-4138-97df-430bd3e4cd45";
+const STORAGE = { cookies: [{ name: "s", value: "1", domain: "ai.joinhandshake.com", path: "/" }] };
+
+function tasksPayload(ids) {
+  const activeTasks = ids.map((id) => ({ id }));
+  return [{ result: { data: { json: { activeTasks, pastTasks: [] } } } }];
+}
+
+function mockFetchPage(pagesByOffset) {
+  return async (_projectUrl, _storageState, _limit, offset) => {
+    if (Object.hasOwn(pagesByOffset, offset)) return pagesByOffset[offset];
+    const err = new Error("Tasks API failed with status 500.");
+    throw err;
+  };
+}
 
 test("normalizeProjectInput accepts project IDs and project URLs", () => {
   assert.deepEqual(
@@ -40,6 +59,73 @@ test("buildTrpcUrl encodes batched tRPC input", () => {
   assert.deepEqual(JSON.parse(url.searchParams.get("input")), {
     "0": { json: { profileId: "profile-1" } },
   });
+});
+
+test("PAGE_SIZE defaults to 10", () => {
+  assert.equal(PAGE_SIZE, 10);
+});
+
+test("fetchAllTasks stops after a short page without another request", async () => {
+  const calls = [];
+  const fetchPage = async (...args) => {
+    calls.push(args[3]);
+    return tasksPayload(["a", "b", "c", "d", "e"]);
+  };
+
+  const tasks = await fetchAllTasks(PROJECT_URL, STORAGE, {
+    pageSize: 10,
+    fetchPage,
+  });
+
+  assert.equal(tasks.length, 5);
+  assert.deepEqual(calls, [0]);
+});
+
+test("fetchAllTasks pages until a partial last page", async () => {
+  const calls = [];
+  const fetchPage = async (...args) => {
+    const offset = args[3];
+    calls.push(offset);
+    if (offset === 0) return tasksPayload(Array.from({ length: 10 }, (_, i) => `t${i}`));
+    return tasksPayload(["t10", "t11", "t12"]);
+  };
+
+  const tasks = await fetchAllTasks(PROJECT_URL, STORAGE, {
+    pageSize: 10,
+    fetchPage,
+  });
+
+  assert.equal(tasks.length, 13);
+  assert.deepEqual(calls, [0, 10]);
+});
+
+test("fetchAllTasks treats 500 past the first page as end of list", async () => {
+  const calls = [];
+  const fetchPage = async (...args) => {
+    const offset = args[3];
+    calls.push(offset);
+    if (offset === 0) return tasksPayload(Array.from({ length: 10 }, (_, i) => `t${i}`));
+    throw new Error("Tasks API failed with status 500.");
+  };
+
+  const tasks = await fetchAllTasks(PROJECT_URL, STORAGE, {
+    pageSize: 10,
+    fetchPage,
+  });
+
+  assert.equal(tasks.length, 10);
+  assert.deepEqual(calls, [0, 10]);
+});
+
+test("fetchAllTasks rethrows 500 on the first page", async () => {
+  const fetchPage = async () => {
+    throw new Error("Tasks API failed with status 500.");
+  };
+
+  await assert.rejects(
+    () => fetchAllTasks(PROJECT_URL, STORAGE, { pageSize: 10, fetchPage }),
+    /status 500/
+  );
 });
 
 test("normalizeTask extracts stage, title, and updatedAt", () => {
