@@ -745,14 +745,31 @@ function updateLatestActivity(currentTasks) {
   saveActivityState();
 }
 
-function describeActivityChange(entry) {
-  if (entry.isNew) return "New task in your list";
-  return entry.changes
-    .map(
-      (c) =>
-        `${activityFieldLabel(c.field)}: ${formatActivityValue(c.field, c.from)} → ${formatActivityValue(c.field, c.to)}`
-    )
-    .join(" · ");
+function describeActivityChangeLine(change) {
+  const from = formatActivityValue(change.field, change.from);
+  const to = formatActivityValue(change.field, change.to);
+
+  if (change.field === "stage") {
+    return `Stage moved from ${from} to ${to}`;
+  }
+  if (change.field === "buildStatus") {
+    return `Build changed from ${from} to ${to}`;
+  }
+  if (change.field === "title") {
+    if (from === "—" && to !== "—") return `Title set to “${to}”`;
+    if (from !== "—" && to === "—") return "Title removed";
+    return `Title updated from “${from}” to “${to}”`;
+  }
+  if (change.field === "updatedAt") {
+    return `Last updated changed from ${from} to ${to}`;
+  }
+
+  return `${activityFieldLabel(change.field)} changed from ${from} to ${to}`;
+}
+
+function describeActivityChanges(entry) {
+  if (entry.isNew) return ["New task added to your list"];
+  return entry.changes.map(describeActivityChangeLine);
 }
 
 function renderActivity() {
@@ -785,17 +802,31 @@ function renderActivity() {
   elements.activityList.innerHTML = entries
     .map((entry) => {
       const task = entry.task;
+      const changeLines = describeActivityChanges(entry);
       return `
         <li class="activity-item">
           <div class="activity-item-top">
-            <span class="mono activity-id">${escapeHtml(task.id)}</span>
+            <span class="task-id-cell">
+              <span class="mono task-id-text activity-id">${escapeHtml(task.id)}</span>
+              <button
+                type="button"
+                class="copy-id-button"
+                data-task-id="${escapeHtml(task.id)}"
+                title="Copy task ID"
+                aria-label="Copy task ID ${escapeHtml(task.id)}"
+              >⧉</button>
+            </span>
             <span class="pill ${pillClass(task.stage)}">${escapeHtml(task.stage)}</span>
             <span class="pill ${pillClass(task.buildStatus || "None")}">${escapeHtml(
               task.buildStatus || "None"
             )}</span>
             <span class="activity-date">${escapeHtml(formatDate(task.updatedAt))}</span>
           </div>
-          <p class="activity-change">${escapeHtml(describeActivityChange(entry))}</p>
+          <div class="activity-changes">
+            ${changeLines
+              .map((line) => `<p class="activity-change">${escapeHtml(line)}</p>`)
+              .join("")}
+          </div>
         </li>
       `;
     })
@@ -1013,24 +1044,31 @@ document.querySelectorAll("th.sortable").forEach((th) => {
   th.addEventListener("click", () => handleSortClick(th.dataset.sort));
 });
 
-elements.taskTable.addEventListener("click", async (event) => {
-  const button = event.target.closest(".copy-id-button");
-  if (!button) return;
+async function copyTaskIdFromButton(button) {
   const id = button.dataset.taskId;
   if (!id) return;
+  await writeClipboard(id);
+  const original = button.textContent;
+  button.classList.add("copied");
+  button.textContent = "✓";
+  setTimeout(() => {
+    button.classList.remove("copied");
+    button.textContent = original;
+  }, 1200);
+}
+
+async function handleCopyIdClick(event) {
+  const button = event.target.closest(".copy-id-button");
+  if (!button) return;
   try {
-    await writeClipboard(id);
-    const original = button.textContent;
-    button.classList.add("copied");
-    button.textContent = "✓";
-    setTimeout(() => {
-      button.classList.remove("copied");
-      button.textContent = original;
-    }, 1200);
+    await copyTaskIdFromButton(button);
   } catch {
     showMessage("Could not copy task ID.", "error");
   }
-});
+}
+
+elements.taskTable.addEventListener("click", handleCopyIdClick);
+elements.activityList?.addEventListener("click", handleCopyIdClick);
 
 [
   elements.searchInput,

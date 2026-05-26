@@ -549,9 +549,19 @@ select:focus {
   margin-bottom: 6px;
 }
 
+.activity-item-top .task-id-cell {
+  flex: 1 1 200px;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .activity-id {
   font-size: 12px;
   word-break: break-all;
+}
+
+.activity-item:hover .copy-id-button {
+  opacity: 1;
 }
 
 .activity-date {
@@ -561,11 +571,16 @@ select:focus {
   white-space: nowrap;
 }
 
+.activity-changes {
+  display: grid;
+  gap: 4px;
+}
+
 .activity-change {
   margin: 0;
   color: var(--ink-soft);
   font-size: 13px;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 .activity-empty {
