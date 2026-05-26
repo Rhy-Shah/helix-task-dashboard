@@ -226,6 +226,17 @@ function getHelixProject() {
   };
 }
 
+async function launchLoginBrowser(chromium, log = console.log) {
+  try {
+    const browser = await chromium.launch({ headless: false, channel: "chrome" });
+    log("[login] Using Google Chrome");
+    return browser;
+  } catch {
+    log("[login] Google Chrome not available, using Playwright Chromium");
+    return chromium.launch({ headless: false });
+  }
+}
+
 function createLoginManager(options = {}) {
   const flows = new Map();
   const api = options.api || handshakeApi;
@@ -242,7 +253,7 @@ function createLoginManager(options = {}) {
       );
     }
 
-    const browser = await chromium.launch({ headless: false });
+    const browser = await launchLoginBrowser(chromium);
     const context = await browser.newContext();
     const page = await context.newPage();
     const targetUrl = startUrl || getHelixProject().projectUrl;
@@ -522,5 +533,6 @@ module.exports = {
   createSessionId,
   createSessionStore,
   getHelixProject,
+  launchLoginBrowser,
   parseCookies,
 };

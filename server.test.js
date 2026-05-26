@@ -6,8 +6,46 @@ const {
   createSessionId,
   createSessionStore,
   getHelixProject,
+  launchLoginBrowser,
   parseCookies,
 } = require("./server");
+
+test("launchLoginBrowser prefers installed Chrome", async () => {
+  const launches = [];
+  const mockChromium = {
+    launch: async (opts) => {
+      launches.push(opts);
+      if (opts.channel === "chrome") return { kind: "chrome" };
+      throw new Error("unexpected chromium launch");
+    },
+  };
+  const logs = [];
+  const browser = await launchLoginBrowser(mockChromium, (msg) => logs.push(msg));
+
+  assert.equal(browser.kind, "chrome");
+  assert.equal(launches.length, 1);
+  assert.equal(launches[0].channel, "chrome");
+  assert.ok(logs.some((line) => line.includes("Google Chrome")));
+});
+
+test("launchLoginBrowser falls back to Playwright Chromium", async () => {
+  const launches = [];
+  const mockChromium = {
+    launch: async (opts) => {
+      launches.push(opts);
+      if (opts.channel === "chrome") throw new Error("Chrome not installed");
+      return { kind: "chromium" };
+    },
+  };
+  const logs = [];
+  const browser = await launchLoginBrowser(mockChromium, (msg) => logs.push(msg));
+
+  assert.equal(browser.kind, "chromium");
+  assert.equal(launches.length, 2);
+  assert.equal(launches[0].channel, "chrome");
+  assert.equal(launches[1].channel, undefined);
+  assert.ok(logs.some((line) => line.includes("Playwright Chromium")));
+});
 
 test("parseCookies reads URL encoded cookie values", () => {
   assert.deepEqual(parseCookies("hai_session=abc%20123; theme=clean"), {

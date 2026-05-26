@@ -46,7 +46,7 @@ This page is only the dashboard UI. You do **not** type your password here.
 ### 4. Sign in (separate browser window)
 
 1. On the dashboard, click **Login**.
-2. A **second window** opens — this is an automated Chromium browser controlled by Playwright.
+2. A **second window** opens — usually **Google Chrome** (or Playwright Chromium if Chrome is not installed).
 3. In **that** window, sign in the same way you normally would on the platform:
    - **Google OAuth** is fine — complete the full Google sign-in flow there.
    - Finish SSO / Duo / school login if prompted.
@@ -94,11 +94,11 @@ This confuses people the first time:
 | Place | What happens |
 | --- | --- |
 | **http://localhost:4173** | Dashboard only. Shows tasks **after** a session is saved. |
-| **Chromium window (Playwright)** | Where you sign in with Google OAuth / SSO. |
+| **Chrome / Chromium window** | Where you sign in with Google OAuth / SSO (Chrome is tried first). |
 
 The dashboard never talks to Google directly. Playwright opens the real platform site, you log in there, and the app saves cookies to `auth.json` on your computer.
 
-**Common mistake:** Signing in only in your normal browser, or expecting a login form on localhost. You must complete sign-in in the **Playwright Chromium window** that opens when you click **Login**.
+**Common mistake:** Signing in only in your normal browser, or expecting a login form on localhost. You must complete sign-in in the **login window** that opens when you click **Login** (not the localhost tab).
 
 ---
 
@@ -145,7 +145,8 @@ After the first refresh, this section shows what changed since your last refresh
 | Problem | What to do |
 | --- | --- |
 | Clicked **Login** but nothing opens | Run `npm start` from a normal terminal. Re-run `npx playwright install chromium`. |
-| Google sign-in fails or loops in the Chromium window | Complete OAuth **inside the Playwright window**, not on localhost. If Google shows “browser not secure”, try again or use **Save Login** after you clearly see your signed-in project page in that window. |
+| Google says **“This browser or app may not be secure”** | Google blocks automated browsers. The app now opens **installed Google Chrome** first when you click **Login** (check the terminal for `[login] Using Google Chrome`). Install [Google Chrome](https://www.google.com/chrome/) if needed, complete sign-in in **that** window—not on localhost—then use **Save Login** if tasks do not load. If Chrome is unavailable, it falls back to Playwright Chromium (`npx playwright install chromium` still required). Try non-Google SSO on the platform page if your account offers it. |
+| Google sign-in fails or loops in the login window | Complete OAuth **inside the window opened by Login**, not on localhost. After you see your project/tasks there, use **Save Login** on the dashboard if the window does not close on its own. |
 | Signed in on the platform in Chrome, but dashboard says **Not signed in** | That session is in a different browser. Use **Login** on the dashboard so the Playwright window captures cookies. |
 | Chromium closes before you finish SSO | Click **Login** again and complete the full flow. |
 | Window stays open after Google login | When you see your project/tasks in that window, click **Save Login** on the dashboard. |
