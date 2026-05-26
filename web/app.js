@@ -982,6 +982,8 @@ async function fetchProject({ silent = false } = {}) {
       method: "POST",
       body: JSON.stringify({}),
     });
+    state.connected = true;
+    renderConnection();
     state.dashboard = data;
     renderDashboard();
     if (data.historyWarning) {
@@ -991,6 +993,16 @@ async function fetchProject({ silent = false } = {}) {
     } else {
       clearMessage();
     }
+  } catch (err) {
+    if (/sign in first|session expired/i.test(err.message || "")) {
+      state.connected = false;
+      state.dashboard = null;
+      elements.dashboard.hidden = true;
+      if (elements.mastheadMeta) elements.mastheadMeta.hidden = true;
+      stopGeneratedAtTicker();
+      renderConnection();
+    }
+    throw err;
   } finally {
     if (elements.loadingState) elements.loadingState.hidden = true;
     if (refreshButton && previousLabel !== null) {
