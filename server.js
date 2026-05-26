@@ -1,7 +1,6 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const http = require("node:http");
-const os = require("node:os");
 const path = require("node:path");
 
 const handshakeApi = require("./platform-api");
@@ -11,19 +10,7 @@ const SESSION_COOKIE = "hai_session";
 const WEB_DIR = path.join(__dirname, "web");
 const CONFIG_PATH = path.join(__dirname, "config.json");
 const AUTH_PATH = path.join(__dirname, "auth.json");
-// One Chrome profile per OS user (not per repo clone). Keeps login personal on shared machines.
-const LOGIN_PROFILE_DIR = path.join(
-  os.homedir(),
-  ".project-h-task-dashboard",
-  "login-profile"
-);
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
-
-const LOGIN_LAUNCH_OPTS = {
-  headless: false,
-  ignoreDefaultArgs: ["--enable-automation"],
-  args: ["--disable-blink-features=AutomationControlled"],
-};
 
 const SESSION_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
 const SESSION_COOKIE_MAX_AGE = 30 * 24 * 60 * 60;
@@ -240,53 +227,13 @@ function getHelixProject() {
 }
 
 async function launchLoginSession(chromium, log = console.log) {
-  if (typeof chromium.launchPersistentContext === "function") {
-    try {
-      const context = await chromium.launchPersistentContext(LOGIN_PROFILE_DIR, {
-        ...LOGIN_LAUNCH_OPTS,
-        channel: "chrome",
-      });
-      log("[login] Using Google Chrome (persistent profile)");
-      return { context, browser: null };
-    } catch {
-      try {
-        const context = await chromium.launchPersistentContext(LOGIN_PROFILE_DIR, {
-          ...LOGIN_LAUNCH_OPTS,
-        });
-        log("[login] Using Playwright Chromium (persistent profile)");
-        return { context, browser: null };
-      } catch {
-        // fall through to ephemeral launch
-      }
-    }
-  }
-
-  try {
-    const browser = await chromium.launch({
-      ...LOGIN_LAUNCH_OPTS,
-      channel: "chrome",
-    });
-    log("[login] Using Google Chrome");
-    return { context: await browser.newContext(), browser };
-  } catch {
-    log("[login] Google Chrome not available, using Playwright Chromium");
-    const browser = await chromium.launch({ ...LOGIN_LAUNCH_OPTS });
-    return { context: await browser.newContext(), browser };
-  }
+  const browser = await chromium.launch({ headless: false });
+  log("[login] Using Playwright Chromium");
+  return { context: await browser.newContext(), browser };
 }
 
 async function closeLoginSession(session) {
-  if (session.browser) {
-    await session.browser.close().catch(() => {});
-    return;
-  }
-  await session.context.close().catch(() => {});
-}
-
-/** @deprecated Use launchLoginSession */
-async function launchLoginBrowser(chromium, log) {
-  const session = await launchLoginSession(chromium, log);
-  return session.browser || session.context;
+  await session.browser.close().catch(() => {});
 }
 
 function createLoginManager(options = {}) {
@@ -368,8 +315,7 @@ function createLoginManager(options = {}) {
       if (flow.pollHandle) clearInterval(flow.pollHandle);
       flows.delete(sessionId);
     };
-    if (browser) browser.on("disconnected", onLoginWindowClosed);
-    else context.on("close", onLoginWindowClosed);
+    browser.on("disconnected", onLoginWindowClosed);
 
     await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
 
@@ -589,7 +535,6 @@ module.exports = {
   createSessionStore,
   getHelixProject,
   closeLoginSession,
-  launchLoginBrowser,
   launchLoginSession,
   parseCookies,
 };

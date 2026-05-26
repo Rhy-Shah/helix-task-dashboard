@@ -10,38 +10,11 @@ const {
   parseCookies,
 } = require("./server");
 
-test("launchLoginSession prefers Chrome persistent profile", async () => {
-  const persistent = [];
-  const mockChromium = {
-    launchPersistentContext: async (_dir, opts) => {
-      persistent.push(opts);
-      if (opts.channel === "chrome") {
-        return { pages: () => [], newPage: async () => ({}) };
-      }
-      throw new Error("Chrome not installed");
-    },
-    launch: async () => {
-      throw new Error("should not use ephemeral launch");
-    },
-  };
-  const logs = [];
-  const session = await launchLoginSession(mockChromium, (msg) => logs.push(msg));
-
-  assert.equal(persistent.length, 1);
-  assert.equal(persistent[0].channel, "chrome");
-  assert.equal(session.browser, null);
-  assert.ok(logs.some((line) => line.includes("persistent profile")));
-});
-
-test("launchLoginSession falls back to ephemeral Chromium", async () => {
+test("launchLoginSession uses Playwright Chromium", async () => {
   const launches = [];
   const mockChromium = {
-    launchPersistentContext: async () => {
-      throw new Error("persistent launch failed");
-    },
     launch: async (opts) => {
       launches.push(opts);
-      if (opts.channel === "chrome") throw new Error("Chrome not installed");
       return {
         newContext: async () => ({ pages: () => [], newPage: async () => ({}) }),
       };
@@ -50,8 +23,10 @@ test("launchLoginSession falls back to ephemeral Chromium", async () => {
   const logs = [];
   const session = await launchLoginSession(mockChromium, (msg) => logs.push(msg));
 
+  assert.equal(launches.length, 1);
+  assert.equal(launches[0].headless, false);
+  assert.equal(launches[0].channel, undefined);
   assert.ok(session.browser);
-  assert.equal(launches.length, 2);
   assert.ok(logs.some((line) => line.includes("Playwright Chromium")));
 });
 

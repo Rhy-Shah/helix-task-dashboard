@@ -2,7 +2,7 @@
 
 A local dashboard for your project tasks. Everything runs on your machine — nothing is hosted online.
 
-**One person per computer:** Each fellow runs their own copy. **Login** opens **your** installed Chrome on **your** laptop with **your** Google account. Sessions are saved in `auth.json` and `~/.project-h-task-dashboard/login-profile` on that machine only — not shared on GitHub or between users.
+**One person per computer:** Each fellow runs their own copy. **Login** opens **Playwright Chromium** on **your** laptop for sign-in. Sessions are saved in `auth.json` on that machine only — not shared on GitHub or between users.
 
 ## What you need
 
@@ -48,7 +48,7 @@ This page is only the dashboard UI. You do **not** type your password here.
 ### 4. Sign in (separate browser window)
 
 1. On the dashboard, click **Login**.
-2. A **second window** opens — usually **Google Chrome** (or Playwright Chromium if Chrome is not installed).
+2. A **second window** opens — **Playwright Chromium** (installed via `npx playwright install chromium`).
 3. In **that** window, sign in the same way you normally would on the platform:
    - **Google OAuth** is fine — complete the full Google sign-in flow there.
    - Finish SSO / Duo / school login if prompted.
@@ -96,7 +96,7 @@ This confuses people the first time:
 | Place | What happens |
 | --- | --- |
 | **http://localhost:4173** | Dashboard only. Shows tasks **after** a session is saved. |
-| **Chrome / Chromium window** | Where you sign in with Google OAuth / SSO (Chrome is tried first). |
+| **Playwright Chromium window** | Where you sign in with Google OAuth / SSO. |
 
 The dashboard never talks to Google directly. Playwright opens the real platform site, you log in there, and the app saves cookies to `auth.json` on your computer.
 
