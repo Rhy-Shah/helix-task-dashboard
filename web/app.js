@@ -280,8 +280,10 @@ function renderConnection(profile) {
 
 function pillClass(value) {
   const v = String(value || "");
-  if (v === "failing") return "coral";
+  const lc = v.toLowerCase();
+  if (lc === "failing" || lc.includes("failed")) return "coral";
   if (v === "passing" || v === "Delivered") return "green";
+  if (/pass@/i.test(v) || /submitted for pass@/i.test(v)) return "violet";
   if (/Review|Submitted/.test(v)) return "blue";
   if (/Ready/.test(v)) return "violet";
   return "amber";
