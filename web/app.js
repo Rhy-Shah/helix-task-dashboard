@@ -1,5 +1,6 @@
-const ACTIVITY_FIELDS = ["stage", "buildStatus", "updatedAt", "title"];
+const ACTIVITY_FIELDS = ["stage", "buildStatus"];
 const ACTIVITY_STORAGE_KEY = "hai_activity_state";
+const ACTIVITY_SNAPSHOT_VERSION = 2;
 
 const state = {
   connected: false,
@@ -11,6 +12,7 @@ const state = {
   latestActivity: [],
   activityFromThisRefresh: false,
   activityReady: false,
+  activityBaselineJustCreated: false,
 };
 
 const QUICK_FILTERS = {
@@ -637,11 +639,36 @@ function buildSnapshotMap(tasks) {
   return Object.fromEntries(tasks.map((task) => [task.id, taskSnapshot(task)]));
 }
 
-function loadActivityState() {
+function getActivityStorage() {
   try {
-    const raw = sessionStorage.getItem(ACTIVITY_STORAGE_KEY);
+    if (typeof localStorage !== "undefined") return localStorage;
+  } catch {
+    // ignore storage access issues
+  }
+  try {
+    if (typeof sessionStorage !== "undefined") return sessionStorage;
+  } catch {
+    // ignore storage access issues
+  }
+  return null;
+}
+
+function loadActivityState() {
+  const storage = getActivityStorage();
+  if (!storage) return;
+  try {
+    const raw = storage.getItem(ACTIVITY_STORAGE_KEY);
     if (!raw) return;
     const parsed = JSON.parse(raw);
+    const snapshotVersion = parsed.snapshotVersion ?? 1;
+    if (snapshotVersion !== ACTIVITY_SNAPSHOT_VERSION) {
+      state.previousTaskSnapshot = null;
+      state.latestActivity = [];
+      state.activityFromThisRefresh = false;
+      state.activityReady = false;
+      state.activityBaselineJustCreated = false;
+      return;
+    }
     if (parsed.previousTaskSnapshot) {
       state.previousTaskSnapshot = parsed.previousTaskSnapshot;
     }
@@ -650,20 +677,25 @@ function loadActivityState() {
     }
     state.activityFromThisRefresh = Boolean(parsed.activityFromThisRefresh);
     state.activityReady = Boolean(parsed.activityReady);
+    state.activityBaselineJustCreated = Boolean(parsed.activityBaselineJustCreated);
   } catch {
     // ignore corrupt storage
   }
 }
 
 function saveActivityState() {
+  const storage = getActivityStorage();
+  if (!storage) return;
   try {
-    sessionStorage.setItem(
+    storage.setItem(
       ACTIVITY_STORAGE_KEY,
       JSON.stringify({
+        snapshotVersion: ACTIVITY_SNAPSHOT_VERSION,
         previousTaskSnapshot: state.previousTaskSnapshot,
         latestActivity: state.latestActivity,
         activityFromThisRefresh: state.activityFromThisRefresh,
         activityReady: state.activityReady,
+        activityBaselineJustCreated: state.activityBaselineJustCreated,
       })
     );
   } catch {
@@ -671,23 +703,12 @@ function saveActivityState() {
   }
 }
 
-function clearActivityState() {
-  try {
-    sessionStorage.removeItem(ACTIVITY_STORAGE_KEY);
-  } catch {
-    // ignore
-  }
-}
-
 function activityFieldLabel(field) {
   if (field === "buildStatus") return "Build";
-  if (field === "updatedAt") return "Updated";
-  if (field === "title") return "Title";
   return "Stage";
 }
 
-function formatActivityValue(field, value) {
-  if (field === "updatedAt") return formatDate(value);
+function formatActivityValue(_field, value) {
   if (value === null || value === undefined || value === "") return "—";
   return String(value);
 }
@@ -699,10 +720,7 @@ function diffTasksSinceRefresh(previousById, currentTasks) {
     const prev = previousById[task.id];
     const snap = taskSnapshot(task);
 
-    if (!prev) {
-      activities.push({ task, changes: [], isNew: true });
-      continue;
-    }
+    if (!prev) continue;
 
     const changes = [];
     for (const field of ACTIVITY_FIELDS) {
@@ -733,9 +751,12 @@ function updateLatestActivity(currentTasks) {
     state.latestActivity = [];
     state.activityFromThisRefresh = false;
     state.activityReady = false;
+    state.activityBaselineJustCreated = true;
     saveActivityState();
     return;
   }
+
+  state.activityBaselineJustCreated = false;
 
   state.activityReady = true;
   const fresh = diffTasksSinceRefresh(previous, currentTasks);
@@ -761,20 +782,10 @@ function describeActivityChangeLine(change) {
   if (change.field === "buildStatus") {
     return `Build changed from ${from} to ${to}`;
   }
-  if (change.field === "title") {
-    if (from === "—" && to !== "—") return `Title set to “${to}”`;
-    if (from !== "—" && to === "—") return "Title removed";
-    return `Title updated from “${from}” to “${to}”`;
-  }
-  if (change.field === "updatedAt") {
-    return `Last updated changed from ${from} to ${to}`;
-  }
-
   return `${activityFieldLabel(change.field)} changed from ${from} to ${to}`;
 }
 
 function describeActivityChange(entry) {
-  if (entry.isNew) return "New task added to your list";
   return entry.changes.map(describeActivityChangeLine).join(" · ");
 }
 
@@ -787,13 +798,15 @@ function renderActivity() {
   if (entries.length === 0) {
     if (elements.activityMeta) {
       elements.activityMeta.textContent = state.activityReady
-        ? "No changes on this refresh"
+        ? "No stage or build changes since your last visit"
         : "";
     }
     elements.activityList.innerHTML = `<li class="activity-empty">${
-      state.activityReady
-        ? "No changes on this refresh. Your last activity list will appear here after something updates."
-        : "First refresh saved a baseline. Click Refresh again — any task changes will show up here and stay until the next update."
+      state.activityBaselineJustCreated
+        ? "Baseline saved. Stage and build changes will appear here after your next refresh or visit."
+        : state.activityReady
+          ? "No stage or build changes since your last refresh or visit."
+          : "Sign in and load tasks — stage and build changes since your last visit will show here."
     }</li>`;
     return;
   }
@@ -801,8 +814,8 @@ function renderActivity() {
   if (elements.activityMeta) {
     const n = entries.length;
     elements.activityMeta.textContent = state.activityFromThisRefresh
-      ? `${n} task${n === 1 ? "" : "s"} changed on this refresh`
-      : `No changes on this refresh — showing previous update (${n} task${n === 1 ? "" : "s"})`;
+      ? `${n} task${n === 1 ? "" : "s"} with stage or build changes since your last visit`
+      : `Showing last known changes (${n} task${n === 1 ? "" : "s"})`;
   }
 
   elements.activityList.innerHTML = entries
@@ -953,11 +966,6 @@ async function logout() {
   state.connected = false;
   state.loginWindowOpen = false;
   state.dashboard = null;
-  state.previousTaskSnapshot = null;
-  state.latestActivity = [];
-  state.activityFromThisRefresh = false;
-  state.activityReady = false;
-  clearActivityState();
   stopGeneratedAtTicker();
   elements.dashboard.hidden = true;
   if (elements.mastheadMeta) elements.mastheadMeta.hidden = true;
