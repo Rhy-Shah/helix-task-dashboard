@@ -41,25 +41,25 @@ function isAuditStage(stage) {
 const QUICK_FILTERS = {
   delivered_ready: {
     label: "Accepted",
-    sub: "Delivered, Ready to Deliver, …",
+    sub: "Delivered + RTD",
     accent: "green",
     test: (task) => isAcceptedStage(task.stage),
   },
   internal_audit: {
     label: "Internal Audit",
-    sub: "Review, Internal Audit, …",
+    sub: "Review + Internal Audit",
     accent: "blue",
     test: (task) => isAuditStage(task.stage),
   },
   pass_at: {
     label: "In evaluation",
-    sub: "Pass@*, Submitted for Pass@, …",
+    sub: "All Pass@ Stages",
     accent: "violet",
     test: (task) => isEvaluationStage(task.stage),
   },
   other: {
     label: "Misc",
-    sub: "Invalid, Failed, Holding, …",
+    sub: "Failed + Invalid + Misc",
     accent: "amber",
     test: (task) =>
       !isAcceptedStage(task.stage) &&
