@@ -15,43 +15,56 @@ const state = {
   activityBaselineJustCreated: false,
 };
 
+function stageName(stage) {
+  return String(stage ?? "").trim();
+}
+
+/** Pattern-based buckets so new platform stage names still classify correctly. */
+function isAcceptedStage(stage) {
+  const lc = stageName(stage).toLowerCase();
+  return lc === "delivered" || lc === "ready to deliver";
+}
+
+function isEvaluationStage(stage) {
+  const s = stageName(stage);
+  const lc = s.toLowerCase();
+  return /pass@/i.test(s) || lc.includes("submitted for pass@");
+}
+
+function isAuditStage(stage) {
+  const s = stageName(stage);
+  const lc = s.toLowerCase();
+  if (/clayden/i.test(s)) return false;
+  return lc.includes("internal audit") || /\breview\b/i.test(lc) || lc.includes("likely rejected");
+}
+
 const QUICK_FILTERS = {
   delivered_ready: {
     label: "Accepted",
-    sub: "Delivered + Ready to Deliver",
+    sub: "Delivered, Ready to Deliver, …",
     accent: "green",
-    test: (task) => {
-      const s = task.stage || "";
-      return s === "Delivered" || s === "Ready to Deliver";
-    },
+    test: (task) => isAcceptedStage(task.stage),
   },
   internal_audit: {
     label: "Internal Audit",
-    sub: "Review + Internal Audit",
+    sub: "Review, Internal Audit, …",
     accent: "blue",
-    test: (task) => {
-      const s = task.stage || "";
-      if (/clayden/i.test(s)) return false;
-      return /internal audit|review|likely rejected/i.test(s);
-    },
+    test: (task) => isAuditStage(task.stage),
   },
   pass_at: {
     label: "In evaluation",
-    sub: "Pass@n + Pass@0 + Submitted",
+    sub: "Pass@*, Submitted for Pass@, …",
     accent: "violet",
-    test: (task) => {
-      const s = task.stage || "";
-      return s === "Pass@n" || s === "Pass@0" || s === "Submitted for Pass@";
-    },
+    test: (task) => isEvaluationStage(task.stage),
   },
   other: {
     label: "Misc",
-    sub: "Invalid + Failed + Others",
+    sub: "Invalid, Failed, Holding, …",
     accent: "amber",
     test: (task) =>
-      !QUICK_FILTERS.delivered_ready.test(task) &&
-      !QUICK_FILTERS.internal_audit.test(task) &&
-      !QUICK_FILTERS.pass_at.test(task),
+      !isAcceptedStage(task.stage) &&
+      !isAuditStage(task.stage) &&
+      !isEvaluationStage(task.stage),
   },
 };
 const FILTER_ORDER = ["delivered_ready", "pass_at", "internal_audit", "other"];
@@ -281,13 +294,14 @@ function renderConnection(profile) {
 }
 
 function pillClass(value) {
-  const v = String(value || "");
+  const v = String(value || "").trim();
   const lc = v.toLowerCase();
   if (lc === "failing" || lc.includes("failed")) return "coral";
-  if (v === "passing" || v === "Delivered") return "green";
-  if (/pass@/i.test(v) || /submitted for pass@/i.test(v)) return "violet";
-  if (/Review|Submitted/.test(v)) return "blue";
-  if (/Ready/.test(v)) return "violet";
+  if (lc === "passing" || isAcceptedStage(v)) return "green";
+  if (isEvaluationStage(v)) return "violet";
+  if (isAuditStage(v)) return "blue";
+  if (lc.includes("invalid")) return "ochre";
+  if (lc.includes("holding")) return "amber";
   return "amber";
 }
 
