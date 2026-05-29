@@ -4,6 +4,7 @@ const ACTIVITY_SNAPSHOT_VERSION = 2;
 
 const state = {
   connected: false,
+  profile: null,
   dashboard: null,
   loginWindowOpen: false,
   quickFilter: null,
@@ -264,10 +265,11 @@ function applyBranding(connected) {
 }
 
 function renderConnection(profile) {
+  const resolvedProfile = profile || state.profile;
   elements.connectionCard.classList.toggle("connected", state.connected);
   if (state.connected) {
     elements.connectionTitle.textContent = `Signed in${
-      profile?.name ? ` as ${profile.name}` : ""
+      resolvedProfile?.name ? ` as ${resolvedProfile.name}` : ""
     }`;
   } else if (state.loginWindowOpen) {
     elements.connectionTitle.textContent = "Waiting for sign-in...";
@@ -889,7 +891,8 @@ function renderDashboard() {
 async function loadStatus({ autoFetch = false } = {}) {
   const status = await request("/api/status");
   state.connected = status.connected;
-  renderConnection(status.profile);
+  state.profile = status.profile || null;
+  renderConnection(state.profile);
   if (autoFetch && status.connected) {
     try {
       await fetchProject({ silent: true });
@@ -920,7 +923,8 @@ function startLoginPoll() {
         stopLoginPoll();
         state.connected = true;
         state.loginWindowOpen = false;
-        renderConnection(status.profile);
+        state.profile = status.profile || null;
+        renderConnection(state.profile);
         clearMessage();
         await fetchProject({ silent: true });
         return;
@@ -964,7 +968,8 @@ async function saveLogin() {
     stopLoginPoll();
     state.connected = true;
     state.loginWindowOpen = false;
-    renderConnection(result.profile);
+    state.profile = result.profile || null;
+    renderConnection(state.profile);
     clearMessage();
     await fetchProject({ silent: true });
   } catch (err) {
@@ -979,6 +984,7 @@ async function logout() {
   await request("/api/logout", { method: "POST" });
   state.connected = false;
   state.loginWindowOpen = false;
+  state.profile = null;
   state.dashboard = null;
   stopGeneratedAtTicker();
   elements.dashboard.hidden = true;
@@ -1007,7 +1013,7 @@ async function fetchProject({ silent = false } = {}) {
       body: JSON.stringify({}),
     });
     state.connected = true;
-    renderConnection();
+    renderConnection(state.profile);
     state.dashboard = data;
     renderDashboard();
     if (data.historyWarning) {
